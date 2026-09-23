@@ -1,0 +1,22 @@
+# Build output
+build/
+cmake-build-*/
+
+# CMake / Ninja artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+*.ninja
+.ninja_*
+
+# Compiled objects and binaries
+*.o
+*.a
+*.so
+
+# Editor / OS noise
+.vscode/
+.idea/
+*~
+.DS_Store
