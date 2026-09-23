@@ -122,6 +122,7 @@ struct Server {
     struct wl_listener new_input{};
     struct wl_listener new_toplevel{};
     struct wl_listener request_cursor{};
+    struct wl_listener backend_destroy{};
 
     std::vector<Output *> outputs;
     // Front of the vector is topmost (most recently focused).
@@ -558,6 +559,19 @@ void on_new_input(struct wl_listener *listener, void *data) {
     }
 }
 
+// If the backend dies (e.g. the host disconnects our nested window),
+// leave the event loop so main() can tear down in order instead of
+// tripping wlroots' listener-list assertions during display destroy.
+// NOTE: this listener removes itself: it fires from inside backend
+// destruction, so it must already be detached when wlr_backend_finish
+// runs its empty-list assertions afterwards.
+void on_backend_destroy(struct wl_listener *listener, void * /*data*/) {
+    Server *server = wl_container_of(listener, server, backend_destroy);
+    wl_list_remove(&listener->link);
+    wlr_log(WLR_ERROR, "backend destroyed; shutting down");
+    wl_display_terminate(server->display);
+}
+
 void on_output_frame(struct wl_listener *listener, void * /*data*/) {
     Output *output = wl_container_of(listener, output, frame);
     Server *server = output->server;
@@ -709,6 +723,8 @@ int main(int argc, char **argv) {
     wl_signal_add(&server.backend->events.new_input, &server.new_input);
     server.new_output.notify = on_new_output;
     wl_signal_add(&server.backend->events.new_output, &server.new_output);
+    server.backend_destroy.notify = on_backend_destroy;
+    wl_signal_add(&server.backend->events.destroy, &server.backend_destroy);
 
     server.socket = wl_display_add_socket_auto(server.display);
     if (server.socket == nullptr) {
@@ -723,6 +739,21 @@ int main(int argc, char **argv) {
     }
 
     wl_display_run(server.display);
+
+    // Tear down in order: detach our listeners first so backend/display
+    // destruction never trips wlroots' listener-list assertions.
+    // (backend_destroy detaches itself if/when it fires, including during
+    // display destroy on a normal exit, so it is deliberately not removed
+    // here.)
+    wl_list_remove(&server.new_output.link);
+    wl_list_remove(&server.new_input.link);
+    wl_list_remove(&server.new_toplevel.link);
+    wl_list_remove(&server.request_cursor.link);
+    wl_list_remove(&server.cursor_events.motion.link);
+    wl_list_remove(&server.cursor_events.motion_absolute.link);
+    wl_list_remove(&server.cursor_events.button.link);
+    wl_list_remove(&server.cursor_events.axis.link);
+    wl_list_remove(&server.cursor_events.frame.link);
 
     wl_display_destroy_clients(server.display);
     wl_display_destroy(server.display);
