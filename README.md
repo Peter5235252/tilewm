@@ -34,17 +34,23 @@ It prints `WAYLAND_DISPLAY=wayland-1` (or similar). From another terminal:
 WAYLAND_DISPLAY=wayland-1 foot
 ```
 
-## Keybindings (Phase 1)
+## Keybindings (Phase 2)
 
-| Keys            | Action                        |
-|-----------------|-------------------------------|
-| `Alt+Return`    | spawn terminal (`foot`)       |
-| `Alt+Q`         | close focused window          |
-| `Alt+Shift+E`   | quit the compositor           |
-| click           | focus window                  |
+| Keys                | Action                        |
+|---------------------|-------------------------------|
+| `Alt+Return`        | spawn terminal (`foot`)       |
+| `Alt+J` / `Alt+K`   | focus next / previous window  |
+| `Alt+Space`         | toggle floating on focused    |
+| `Alt+1` … `Alt+4`   | switch workspace              |
+| `Alt+Shift+1` … `4` | move focused window + refocus |
+| `Alt+Q`             | close focused window          |
+| `Alt+Shift+E`       | quit the compositor           |
+| click               | focus window                  |
 
 ## Roadmap
 
-- Phase 1 (here): bring-up, scene rendering, floating xdg-shell views, focus.
-- Phase 2: master-stack tiling from `src/tiling.hpp`, workspaces, floating toggle.
-- Phase 3: layer-shell bar support, XWayland, config file, multi-output polish.
+- Phase 1 (done): bring-up, scene rendering, floating xdg-shell views, focus.
+- Phase 2 (here): master-stack tiling, focus cycling, floating toggle,
+  4 workspaces.
+- Phase 3: layer-shell bar support, XWayland, config file (gaps, mfact,
+  nmaster, keybinds), multi-output polish.

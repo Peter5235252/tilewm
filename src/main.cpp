@@ -1,14 +1,13 @@
-// tilewm - Phase 1 bring-up: a minimal nested wlroots 0.20 compositor.
+// tilewm - Phase 2: master-stack tiling Wayland compositor (wlroots 0.20).
 //
 // What works in this phase:
 //   * backend autocreate (nested Wayland/X11 window under WSLg, DRM on real hw)
 //   * GLES2 renderer + allocator, scene-graph rendering with per-frame commit
 //   * single-layout output handling, software cursor with xcursor theme
-//   * xdg-shell toplevels shown floating, click-to-focus, Alt+Return spawns
-//     a terminal, Alt+Q closes the focused window, Alt+Shift+E quits.
-//
-// Next phase: replace the floating placement with the master-stack layout
-// from tiling.hpp and add workspaces.
+//   * xdg-shell toplevels arranged in a master-stack layout, click-to-focus,
+//     Alt+Return spawns a terminal, Alt+J/K cycles focus, Alt+Space toggles
+//     floating, Alt+1..4 switches between 4 workspaces, Alt+Shift+1..4 moves
+//     the focused window, Alt+Q closes, Alt+Shift+E quits.
 
 #include <cassert>
 #include <csignal>
@@ -49,6 +48,8 @@ extern "C" {
 #include <algorithm>
 #include <vector>
 
+#include "tiling.hpp"
+
 namespace {
 
 struct Server;
@@ -65,9 +66,14 @@ struct View {
     Server *server = nullptr;
     struct wlr_xdg_toplevel *toplevel = nullptr;
     struct wlr_scene_tree *scene_tree = nullptr;
-    // Floating position in layout coordinates (tiling phase will drive this).
+    // Tiling state: position in layout coordinates, floating override,
+    // workspace index, and last size we configured (to avoid loops).
     int x = 0;
     int y = 0;
+    bool floating = false;
+    int workspace = 0;
+    int applied_w = 0;
+    int applied_h = 0;
     bool mapped = false;
     struct wl_listener map{};
     struct wl_listener unmap{};
@@ -121,6 +127,9 @@ struct Server {
     // Front of the vector is topmost (most recently focused).
     std::vector<View *> views;
 
+    static constexpr int kWorkspaces = 4;
+    int active_workspace = 0;
+
     const char *socket = nullptr;
 };
 
@@ -137,7 +146,7 @@ void spawn_terminal() {
 
 View *view_at(Server *server, double lx, double ly) {
     for (View *view : server->views) {
-        if (!view->mapped) {
+        if (!view->mapped || view->workspace != server->active_workspace) {
             continue;
         }
         struct wlr_box geom = view->toplevel->base->geometry;
@@ -148,6 +157,40 @@ View *view_at(Server *server, double lx, double ly) {
         }
     }
     return nullptr;
+}
+
+// Tile all mapped, non-floating views of the active workspace using the
+// master-stack layout. Oldest window becomes master for a stable layout.
+void arrange(Server *server) {
+    if (server->outputs.empty()) {
+        return;
+    }
+    struct wlr_box area{};
+    wlr_output_layout_get_box(server->output_layout,
+        server->outputs.front()->wlr_output, &area);
+    if (area.width <= 0 || area.height <= 0) {
+        return;
+    }
+    std::vector<View *> tiled;
+    for (auto it = server->views.rbegin(); it != server->views.rend(); ++it) {
+        View *v = *it;
+        if (v->mapped && !v->floating && v->workspace == server->active_workspace) {
+            tiled.push_back(v);
+        }
+    }
+    auto boxes = tilewm::master_stack(static_cast<int>(tiled.size()),
+        tilewm::Box{area.x, area.y, area.width, area.height});
+    for (std::size_t i = 0; i < tiled.size(); ++i) {
+        View *v = tiled[i];
+        v->x = boxes[i].x;
+        v->y = boxes[i].y;
+        wlr_scene_node_set_position(&v->scene_tree->node, v->x, v->y);
+        if (v->applied_w != boxes[i].w || v->applied_h != boxes[i].h) {
+            v->applied_w = boxes[i].w;
+            v->applied_h = boxes[i].h;
+            wlr_xdg_toplevel_set_size(v->toplevel, boxes[i].w, boxes[i].h);
+        }
+    }
 }
 
 void focus_view(Server *server, View *view) {
@@ -184,24 +227,77 @@ void focus_view(Server *server, View *view) {
     }
 }
 
+// Most recently focused mapped view on the active workspace, if any.
+View *top_visible(Server *server) {
+    for (View *v : server->views) {
+        if (v->mapped && v->workspace == server->active_workspace) {
+            return v;
+        }
+    }
+    return nullptr;
+}
+
+void switch_workspace(Server *server, int ws) {
+    if (ws < 0 || ws >= Server::kWorkspaces || ws == server->active_workspace) {
+        return;
+    }
+    server->active_workspace = ws;
+    for (View *v : server->views) {
+        wlr_scene_node_set_enabled(&v->scene_tree->node,
+            v->mapped && v->workspace == ws);
+    }
+    arrange(server);
+    focus_view(server, top_visible(server));
+}
+
+void focus_cycle(Server *server, int dir) {
+    std::vector<View *> vis;
+    for (View *v : server->views) {
+        if (v->mapped && v->workspace == server->active_workspace) {
+            vis.push_back(v);
+        }
+    }
+    if (vis.empty()) {
+        return;
+    }
+    struct wlr_surface *cur = server->seat->keyboard_state.focused_surface;
+    std::size_t idx = 0;
+    bool found = false;
+    for (std::size_t i = 0; i < vis.size(); ++i) {
+        if (vis[i]->toplevel->base->surface == cur) {
+            idx = i;
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        focus_view(server, vis.front());
+        return;
+    }
+    idx = (idx + static_cast<std::size_t>(dir) + vis.size()) % vis.size();
+    focus_view(server, vis[idx]);
+}
+
 void on_view_map(struct wl_listener *listener, void * /*data*/) {
     View *view = wl_container_of(listener, view, map);
     Server *server = view->server;
     view->mapped = true;
-    // Phase 1: cascade floating placement so new windows don't fully overlap.
-    static int cascade = 0;
-    view->x = 40 + (cascade % 8) * 32;
-    view->y = 40 + (cascade % 8) * 24;
-    ++cascade;
-    wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
+    view->workspace = server->active_workspace;
     wlr_scene_node_set_enabled(&view->scene_tree->node, true);
+    arrange(server);
     focus_view(server, view);
 }
 
 void on_view_unmap(struct wl_listener *listener, void * /*data*/) {
     View *view = wl_container_of(listener, view, unmap);
+    Server *server = view->server;
     view->mapped = false;
     wlr_scene_node_set_enabled(&view->scene_tree->node, false);
+    arrange(server);
+    if (server->seat->keyboard_state.focused_surface ==
+        view->toplevel->base->surface) {
+        focus_view(server, top_visible(server));
+    }
 }
 
 void on_view_commit(struct wl_listener *listener, void * /*data*/) {
@@ -215,6 +311,9 @@ void on_view_commit(struct wl_listener *listener, void * /*data*/) {
 void on_view_destroy(struct wl_listener *listener, void * /*data*/) {
     View *view = wl_container_of(listener, view, destroy);
     Server *server = view->server;
+    // Exclude the dying view from layout before arranging: configuring a
+    // toplevel from inside its own destroy event would use-after-free.
+    view->mapped = false;
     wl_list_remove(&view->map.link);
     wl_list_remove(&view->unmap.link);
     wl_list_remove(&view->commit.link);
@@ -223,9 +322,13 @@ void on_view_destroy(struct wl_listener *listener, void * /*data*/) {
     if (it != server->views.end()) {
         server->views.erase(it);
     }
-    if (!server->views.empty()) {
-        focus_view(server, server->views.front());
+    arrange(server);
+    // The toplevel is going away: never let it keep keyboard focus, and
+    // don't dereference its surface below (it may already be half-torn-down).
+    if (server->seat->keyboard_state.focused_surface != nullptr) {
+        wlr_seat_keyboard_notify_clear_focus(server->seat);
     }
+    focus_view(server, top_visible(server));
     delete view;
 }
 
@@ -252,6 +355,19 @@ void on_new_toplevel(struct wl_listener *listener, void *data) {
     server->views.push_back(view);
 }
 
+View *focused_view(Server *server) {
+    struct wlr_surface *s = server->seat->keyboard_state.focused_surface;
+    if (s == nullptr) {
+        return nullptr;
+    }
+    for (View *v : server->views) {
+        if (v->mapped && v->toplevel->base->surface == s) {
+            return v;
+        }
+    }
+    return nullptr;
+}
+
 bool handle_keybinding(Server *server, xkb_keysym_t sym, uint32_t modifiers) {
     const bool alt = (modifiers & WLR_MODIFIER_ALT) != 0;
     const bool shift = (modifiers & WLR_MODIFIER_SHIFT) != 0;
@@ -262,8 +378,9 @@ bool handle_keybinding(Server *server, xkb_keysym_t sym, uint32_t modifiers) {
         return true;
     }
     if (alt && !shift && (sym == XKB_KEY_q || sym == XKB_KEY_Q)) {
-        if (!server->views.empty() && server->views.front()->mapped) {
-            wlr_xdg_toplevel_send_close(server->views.front()->toplevel);
+        View *focused = focused_view(server);
+        if (focused != nullptr) {
+            wlr_xdg_toplevel_send_close(focused->toplevel);
         }
         return true;
     }
@@ -274,6 +391,42 @@ bool handle_keybinding(Server *server, xkb_keysym_t sym, uint32_t modifiers) {
     if (ctrl && alt && (sym == XKB_KEY_q || sym == XKB_KEY_Q)) {
         wl_display_terminate(server->display);
         return true;
+    }
+    if (alt && !shift && (sym == XKB_KEY_j || sym == XKB_KEY_J)) {
+        focus_cycle(server, +1);
+        return true;
+    }
+    if (alt && !shift && (sym == XKB_KEY_k || sym == XKB_KEY_K)) {
+        focus_cycle(server, -1);
+        return true;
+    }
+    if (alt && !shift && sym == XKB_KEY_space) {
+        View *focused = focused_view(server);
+        if (focused != nullptr) {
+            focused->floating = !focused->floating;
+            // Keep the window where it is and on top while floating.
+            wlr_scene_node_raise_to_top(&focused->scene_tree->node);
+            arrange(server);
+        }
+        return true;
+    }
+    const xkb_keysym_t ws_keys[] = {XKB_KEY_1, XKB_KEY_2, XKB_KEY_3, XKB_KEY_4};
+    for (int i = 0; i < Server::kWorkspaces; ++i) {
+        if (alt && sym == ws_keys[i]) {
+            if (shift) {
+                View *focused = focused_view(server);
+                if (focused != nullptr) {
+                    focused->workspace = i;
+                    wlr_scene_node_set_enabled(&focused->scene_tree->node,
+                        focused->mapped && i == server->active_workspace);
+                    arrange(server);
+                    focus_view(server, top_visible(server));
+                }
+            } else {
+                switch_workspace(server, i);
+            }
+            return true;
+        }
     }
     return false;
 }
@@ -480,6 +633,7 @@ void on_new_output(struct wl_listener *listener, void *data) {
     server->outputs.push_back(output);
 
     wlr_scene_output_create(server->scene, wlr_output);
+    arrange(server);
 }
 
 } // namespace
