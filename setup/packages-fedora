@@ -1,0 +1,22 @@
+# Fedora overlay (official repos only, no COPR). One per line.
+gcc
+gcc-c++
+cmake
+ninja-build
+pkgconf-pkg-config
+wlroots-devel
+wayland-devel
+wayland-protocols-devel
+libxkbcommon-devel
+libinput-devel
+pixman-devel
+libseat-devel
+mesa-libEGL-devel
+mesa-libGLES-devel
+libdrm-devel
+systemd-devel
+lua-devel
+libjpeg-turbo-devel
+libpng-devel
+xdotool
+xwininfo

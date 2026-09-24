@@ -1,0 +1,18 @@
+# Arch Linux overlay (official repos only, no AUR). One per line.
+base-devel
+cmake
+ninja
+pkgconf
+wlroots0.20
+wayland
+wayland-protocols
+libxkbcommon
+libinput
+libseat
+mesa
+libdrm
+lua
+libjpeg-turbo
+libpng
+xdotool
+xwininfo

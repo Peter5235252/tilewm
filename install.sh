@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tilewm installer: Arch Linux and Fedora only (for now).
 #
-#   ./install.sh [--yes] [--no-config] [--prefix DIR] [--source DIR]
+#   ./install.sh [--yes] [--no-config] [--prefix DIR] [--source DIR] [--testmode]
 #
 # What it does:
 #   1. Refuses to run as root (sudo is used only for the package step).
@@ -14,6 +14,9 @@
 #
 # Interface: gum menus/spinners when available, plain prompts otherwise.
 # Non-interactive: ./install.sh --yes
+# Dry run: ./install.sh --testmode (full run, HOME redirected to a temp
+#   dir so nothing in your real home is touched; system packages still
+#   install normally).
 
 set -euo pipefail
 
@@ -22,15 +25,18 @@ ASSUME_YES=0
 DO_CONFIG=1
 PREFIX="$HOME"
 SOURCE_DIR=""
+TESTMODE=0
 
 usage() {
     cat <<EOF
-Usage: ./install.sh [--yes] [--no-config] [--prefix DIR] [--source DIR]
+Usage: ./install.sh [--yes] [--no-config] [--prefix DIR] [--source DIR] [--testmode]
 
   --yes         answer yes to every prompt (automation friendly)
   --no-config   skip installing example configs into ~/.config
   --prefix DIR  clone tilewm into DIR instead of \$HOME
   --source DIR  use an existing checkout at DIR instead of cloning
+  --testmode    full run with HOME redirected to a temp dir (safe dry run;
+                system packages still install normally)
 EOF
 }
 
@@ -38,6 +44,11 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --yes) ASSUME_YES=1 ;;
         --no-config) DO_CONFIG=0 ;;
+        --testmode)
+            TESTMODE=1
+            PREFIX="$(mktemp -d /tmp/tilewm-test-XXXXXX)"
+            export HOME="$PREFIX"
+            ;;
         --prefix) PREFIX="${2:?--prefix needs a directory}"; shift ;;
         --source) SOURCE_DIR="${2:?--source needs a directory}"; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -79,8 +90,14 @@ if [ -r /etc/os-release ]; then
 fi
 [ -n "$DISTRO" ] || die "unsupported distro (ID=${ID:-unknown}): tilewm supports Arch Linux and Fedora only, for now."
 
-ARCH_DEPS="base-devel cmake ninja pkgconf git wlroots0.20 wayland wayland-protocols libxkbcommon libinput libseat mesa libdrm lua libjpeg-turbo libpng foot gum xdotool xwininfo"
-FEDORA_DEPS="gcc gcc-c++ cmake ninja-build pkgconf-pkg-config git wlroots-devel wayland-devel wayland-protocols-devel libxkbcommon-devel libinput-devel pixman-devel libseat-devel mesa-libEGL-devel mesa-libGLES-devel libdrm-devel systemd-devel lua-devel libjpeg-turbo-devel libpng-devel foot gum xdotool xwininfo"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Package manifests live in setup/: shared "packages" plus a per-distro
+# overlay. One package per line, "#" comments allowed. Only this function
+# knows the layout, so adding a distro means adding one file.
+read_manifest() {
+    grep -v -e '^#' -e '^$' "$SCRIPT_DIR/setup/$1" 2>/dev/null | tr '\n' ' '
+}
 
 # ---------------------------------------------------------------------------
 # 3. TUI: gum when available, plain prompts otherwise.
@@ -151,6 +168,9 @@ run_step() {
 # ---------------------------------------------------------------------------
 MODE="$(choose_mode)"
 log "distro: $DISTRO, mode: $MODE"
+if [ "$TESTMODE" -eq 1 ]; then
+    log "test mode: HOME redirected to $HOME, real home untouched"
+fi
 
 if [ "$MODE" != "build" ] && [ "$MODE" != "config" ]; then
     confirm "Install system packages with sudo?" || die "aborted."
@@ -160,12 +180,18 @@ fi
 # 5. Dependencies (+ gum bootstrap for the rest of this run).
 # ---------------------------------------------------------------------------
 install_deps() {
+    overlay="packages-$DISTRO"
+    [ -f "$SCRIPT_DIR/setup/$overlay" ] \
+        || die "missing package manifest setup/$overlay (broken checkout?)."
+    # shellcheck disable=SC2086
+    DEPS="$(read_manifest packages) $(read_manifest "$overlay")"
+    [ -n "$DEPS" ] || die "package manifests are empty (broken checkout?)."
     if [ "$DISTRO" = "arch" ]; then
         # shellcheck disable=SC2086
-        sudo pacman -S --needed --noconfirm $ARCH_DEPS
+        sudo pacman -S --needed --noconfirm $DEPS
     else
         # shellcheck disable=SC2086
-        sudo dnf install -y $FEDORA_DEPS
+        sudo dnf install -y $DEPS
     fi
     # A distro upgrade renames versioned packages (e.g. wlroots0.20);
     # fail loudly here instead of with a cryptic cmake error later.

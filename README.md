@@ -11,6 +11,15 @@ dependency comes from the official repositories.
 
 ## Install (recommended)
 
+From a bare machine, one line (Arch or Fedora) — detects your distro,
+installs git, clones, and hands off to the installer:
+
+```
+bash <(curl -s https://raw.githubusercontent.com/Peter5235252/tilewm/main/setup.sh)
+```
+
+Or the classic way:
+
 ```
 git clone https://github.com/Peter5235252/tilewm.git
 cd tilewm
@@ -24,7 +33,8 @@ updates the source, builds, runs the test suite, and installs the example
 backed up, never silently overwritten). It uses `gum` menus when available
 and plain prompts otherwise. Useful flags: `--yes` (non-interactive),
 `--no-config` (leave `~/.config` alone), `--source DIR` (use an existing
-checkout), `--prefix DIR` (clone location).
+checkout), `--prefix DIR` (clone location), `--testmode` (full dry run
+with HOME redirected to a temp dir).
 
 Prefer doing it by hand? The exact package sets are listed below, then the
 same `cmake` build as everywhere.
