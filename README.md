@@ -4,6 +4,31 @@ Built and tested on Fedora 44 under WSL2 / WSLg, but it should run on any
 Linux with wlroots 0.20: nested under another Wayland/X11 session for
 development, or on DRM/KMS on real hardware.
 
+Supported distros: **Arch Linux and Fedora only, for now.** The installer
+and the dependency lists below cover exactly these two; anything else is
+unverified. No AUR or COPR packages are needed anywhere — every
+dependency comes from the official repositories.
+
+## Install (recommended)
+
+```
+git clone https://github.com/Peter5235252/tilewm.git
+cd tilewm
+./install.sh
+```
+
+The script detects Arch vs Fedora, installs system packages (sudo is used
+only for that step — never run the script itself as root), clones or
+updates the source, builds, runs the test suite, and installs the example
+`init.lua`, `foot.ini` and wallpaper into `~/.config` (existing files are
+backed up, never silently overwritten). It uses `gum` menus when available
+and plain prompts otherwise. Useful flags: `--yes` (non-interactive),
+`--no-config` (leave `~/.config` alone), `--source DIR` (use an existing
+checkout), `--prefix DIR` (clone location).
+
+Prefer doing it by hand? The exact package sets are listed below, then the
+same `cmake` build as everywhere.
+
 ## Dependencies (Fedora 44)
 
 ```
