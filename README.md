@@ -63,6 +63,23 @@ WAYLAND_DISPLAY=wayland-1 foot
 | `Alt+Shift+E`       | quit the compositor           |
 | click               | focus window                  |
 
+## Configuration (Phase 3a)
+
+Settings and keybindings live in Lua, not in C++:
+
+```
+mkdir -p ~/.config/tilewm
+cp examples/init.lua ~/.config/tilewm/init.lua
+$EDITOR ~/.config/tilewm/init.lua
+```
+
+The file sets `config = { gaps, mfact, nmaster, workspaces }` and
+registers keys with `bind("Alt+Shift", "e", "quit")` (modifiers Alt, Ctrl,
+Shift, Super; key names are xkb keysyms; workspace actions take a 1-based
+number). Apply changes with `Alt+Shift+R`, with `kill -HUP <tilewm-pid>`,
+or by restarting. A custom path works too: `tilewm /path/to/init.lua`.
+Missing or broken files fall back to built-in defaults with a log line.
+
 ## Roadmap
 
 - Phase 1 (done): bring-up, scene rendering, floating xdg-shell views, focus.

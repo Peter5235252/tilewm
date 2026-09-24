@@ -1,0 +1,52 @@
+#pragma once
+
+// tilewm configuration model: plain C++ values, no Lua types here, so this
+// header stays includable and unit-testable anywhere. config.cpp bridges
+// these to an init.lua file; main.cpp consumes them.
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace tilewm {
+
+// Modifier bits for Keybind::mods (mapped to WLR_MODIFIER_* by main.cpp).
+constexpr uint32_t MOD_SHIFT = 1u << 0;
+constexpr uint32_t MOD_CTRL = 1u << 1;
+constexpr uint32_t MOD_ALT = 1u << 2;
+constexpr uint32_t MOD_SUPER = 1u << 3;
+
+struct Keybind {
+    uint32_t mods = 0;
+    uint32_t keysym = 0; // xkb keysym
+    std::string action;
+    int arg = 0; // 1-based workspace number for workspace actions
+};
+
+struct Config {
+    int gaps = 0;        // pixels around each window (and screen edge)
+    float mfact = 0.55f; // master column width fraction
+    int nmaster = 1;     // windows in the master column
+    int workspaces = 4;  // number of workspaces (1..9)
+    std::vector<Keybind> keys;
+};
+
+// Built-in defaults mirroring the original hardcoded behavior.
+Config default_config();
+
+// Parse "Alt+Shift" style specs (separators + - |, case-insensitive).
+// Tokens: shift, ctrl, alt, super/logo/win/mod4. ok=false on unknown token.
+uint32_t parse_mods(const std::string &spec, bool &ok);
+
+// All action names run_action() understands.
+bool known_action(const std::string &action);
+
+// Load path (an init.lua file) into out. Returns false with a message in
+// error on any failure; out is left at its incoming value on failure.
+bool load_config_file(const char *path, Config &out, std::string &error);
+
+// $HOME/.config/tilewm/init.lua (falls back to /root/... for UID 0, which
+// is why the compositor should run as a normal user).
+std::string default_config_path();
+
+} // namespace tilewm

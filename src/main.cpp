@@ -1,4 +1,7 @@
-// tilewm - Phase 2: master-stack tiling Wayland compositor (wlroots 0.20).
+// tilewm - Phase 3a: Lua-configured master-stack tiling compositor.
+// Settings (gaps, mfact, nmaster, workspaces) and all keybindings come from
+// ~/.config/tilewm/init.lua (see examples/init.lua), reloadable via
+// Alt+Shift+R or SIGHUP; built-in defaults apply when missing or broken.
 //
 // What works in this phase:
 //   * backend autocreate (nested Wayland/X11 window under WSLg, DRM on real hw)
@@ -48,6 +51,7 @@ extern "C" {
 #include <algorithm>
 #include <vector>
 
+#include "config.hpp"
 #include "tiling.hpp"
 
 namespace {
@@ -128,8 +132,9 @@ struct Server {
     // Front of the vector is topmost (most recently focused).
     std::vector<View *> views;
 
-    static constexpr int kWorkspaces = 4;
     int active_workspace = 0;
+    tilewm::Config config;
+    std::string config_path;
 
     const char *socket = nullptr;
 };
@@ -169,6 +174,11 @@ void arrange(Server *server) {
     struct wlr_box area{};
     wlr_output_layout_get_box(server->output_layout,
         server->outputs.front()->wlr_output, &area);
+    const int gaps = server->config.gaps;
+    area.x += gaps;
+    area.y += gaps;
+    area.width -= 2 * gaps;
+    area.height -= 2 * gaps;
     if (area.width <= 0 || area.height <= 0) {
         return;
     }
@@ -180,16 +190,25 @@ void arrange(Server *server) {
         }
     }
     auto boxes = tilewm::master_stack(static_cast<int>(tiled.size()),
-        tilewm::Box{area.x, area.y, area.width, area.height});
+        tilewm::Box{area.x, area.y, area.width, area.height},
+        server->config.nmaster, server->config.mfact);
     for (std::size_t i = 0; i < tiled.size(); ++i) {
         View *v = tiled[i];
-        v->x = boxes[i].x;
-        v->y = boxes[i].y;
+        int w = boxes[i].w - 2 * gaps;
+        int h = boxes[i].h - 2 * gaps;
+        if (w < 1) {
+            w = 1;
+        }
+        if (h < 1) {
+            h = 1;
+        }
+        v->x = boxes[i].x + gaps;
+        v->y = boxes[i].y + gaps;
         wlr_scene_node_set_position(&v->scene_tree->node, v->x, v->y);
-        if (v->applied_w != boxes[i].w || v->applied_h != boxes[i].h) {
-            v->applied_w = boxes[i].w;
-            v->applied_h = boxes[i].h;
-            wlr_xdg_toplevel_set_size(v->toplevel, boxes[i].w, boxes[i].h);
+        if (v->applied_w != w || v->applied_h != h) {
+            v->applied_w = w;
+            v->applied_h = h;
+            wlr_xdg_toplevel_set_size(v->toplevel, w, h);
         }
     }
 }
@@ -239,7 +258,8 @@ View *top_visible(Server *server) {
 }
 
 void switch_workspace(Server *server, int ws) {
-    if (ws < 0 || ws >= Server::kWorkspaces || ws == server->active_workspace) {
+    if (ws < 0 || ws >= server->config.workspaces ||
+        ws == server->active_workspace) {
         return;
     }
     server->active_workspace = ws;
@@ -369,39 +389,70 @@ View *focused_view(Server *server) {
     return nullptr;
 }
 
-bool handle_keybinding(Server *server, xkb_keysym_t sym, uint32_t modifiers) {
-    const bool alt = (modifiers & WLR_MODIFIER_ALT) != 0;
-    const bool shift = (modifiers & WLR_MODIFIER_SHIFT) != 0;
-    const bool ctrl = (modifiers & WLR_MODIFIER_CTRL) != 0;
-
-    if (alt && sym == XKB_KEY_Return) {
-        spawn_terminal();
-        return true;
+uint32_t wlr_to_tile_mods(uint32_t wlr_mods) {
+    uint32_t mods = 0;
+    if (wlr_mods & WLR_MODIFIER_SHIFT) {
+        mods |= tilewm::MOD_SHIFT;
     }
-    if (alt && !shift && (sym == XKB_KEY_q || sym == XKB_KEY_Q)) {
+    if (wlr_mods & WLR_MODIFIER_CTRL) {
+        mods |= tilewm::MOD_CTRL;
+    }
+    if (wlr_mods & WLR_MODIFIER_ALT) {
+        mods |= tilewm::MOD_ALT;
+    }
+    if (wlr_mods & WLR_MODIFIER_LOGO) {
+        mods |= tilewm::MOD_SUPER;
+    }
+    return mods;
+}
+
+// Re-read the config file and apply it: fix up workspace assignments,
+// refresh visibility, re-tile, refocus. Keeps the old config on failure.
+bool reload_config(Server *server) {
+    tilewm::Config next = server->config;
+    std::string error;
+    if (!tilewm::load_config_file(server->config_path.c_str(), next, error)) {
+        wlr_log(WLR_ERROR, "config reload failed (%s): %s",
+            server->config_path.c_str(), error.c_str());
+        return false;
+    }
+    server->config = std::move(next);
+    if (server->active_workspace >= server->config.workspaces) {
+        server->active_workspace = server->config.workspaces - 1;
+    }
+    for (View *v : server->views) {
+        if (v->workspace >= server->config.workspaces) {
+            v->workspace = 0;
+        }
+        wlr_scene_node_set_enabled(&v->scene_tree->node,
+            v->mapped && v->workspace == server->active_workspace);
+    }
+    arrange(server);
+    focus_view(server, top_visible(server));
+    wlr_log(WLR_INFO, "config reloaded: gaps=%d mfact=%.2f nmaster=%d "
+            "workspaces=%d binds=%zu",
+        server->config.gaps, static_cast<double>(server->config.mfact),
+        server->config.nmaster, server->config.workspaces,
+        server->config.keys.size());
+    return true;
+}
+
+void run_action(Server *server, const tilewm::Keybind &bind) {
+    const std::string &a = bind.action;
+    if (a == "spawn-terminal") {
+        spawn_terminal();
+    } else if (a == "close") {
         View *focused = focused_view(server);
         if (focused != nullptr) {
             wlr_xdg_toplevel_send_close(focused->toplevel);
         }
-        return true;
-    }
-    if (alt && shift && (sym == XKB_KEY_E || sym == XKB_KEY_e)) {
+    } else if (a == "quit") {
         wl_display_terminate(server->display);
-        return true;
-    }
-    if (ctrl && alt && (sym == XKB_KEY_q || sym == XKB_KEY_Q)) {
-        wl_display_terminate(server->display);
-        return true;
-    }
-    if (alt && !shift && (sym == XKB_KEY_j || sym == XKB_KEY_J)) {
+    } else if (a == "focus-next") {
         focus_cycle(server, +1);
-        return true;
-    }
-    if (alt && !shift && (sym == XKB_KEY_k || sym == XKB_KEY_K)) {
+    } else if (a == "focus-prev") {
         focus_cycle(server, -1);
-        return true;
-    }
-    if (alt && !shift && sym == XKB_KEY_space) {
+    } else if (a == "toggle-floating") {
         View *focused = focused_view(server);
         if (focused != nullptr) {
             focused->floating = !focused->floating;
@@ -409,27 +460,38 @@ bool handle_keybinding(Server *server, xkb_keysym_t sym, uint32_t modifiers) {
             wlr_scene_node_raise_to_top(&focused->scene_tree->node);
             arrange(server);
         }
-        return true;
+    } else if (a == "workspace") {
+        switch_workspace(server, bind.arg - 1);
+    } else if (a == "move-to-workspace") {
+        View *focused = focused_view(server);
+        int ws = bind.arg - 1;
+        if (focused != nullptr && ws >= 0 && ws < server->config.workspaces) {
+            focused->workspace = ws;
+            wlr_scene_node_set_enabled(&focused->scene_tree->node,
+                focused->mapped && ws == server->active_workspace);
+            arrange(server);
+            focus_view(server, top_visible(server));
+        }
+    } else if (a == "reload-config") {
+        reload_config(server);
     }
-    const xkb_keysym_t ws_keys[] = {XKB_KEY_1, XKB_KEY_2, XKB_KEY_3, XKB_KEY_4};
-    for (int i = 0; i < Server::kWorkspaces; ++i) {
-        if (alt && sym == ws_keys[i]) {
-            if (shift) {
-                View *focused = focused_view(server);
-                if (focused != nullptr) {
-                    focused->workspace = i;
-                    wlr_scene_node_set_enabled(&focused->scene_tree->node,
-                        focused->mapped && i == server->active_workspace);
-                    arrange(server);
-                    focus_view(server, top_visible(server));
-                }
-            } else {
-                switch_workspace(server, i);
-            }
+}
+
+bool handle_keybinding(Server *server, xkb_keysym_t sym, uint32_t modifiers) {
+    const uint32_t mods = wlr_to_tile_mods(modifiers);
+    for (const tilewm::Keybind &bind : server->config.keys) {
+        if (bind.mods == mods && bind.keysym == sym) {
+            run_action(server, bind);
             return true;
         }
     }
     return false;
+}
+
+int on_reload_signal(int /*signal_number*/, void *data) {
+    Server *server = static_cast<Server *>(data);
+    reload_config(server);
+    return 0;
 }
 
 void on_keyboard_key(struct wl_listener *listener, void *data) {
@@ -653,16 +715,34 @@ void on_new_output(struct wl_listener *listener, void *data) {
 } // namespace
 
 int main(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
-
     wlr_log_init(WLR_DEBUG, nullptr);
 
     Server server{};
+    server.config = tilewm::default_config();
+    server.config_path =
+        argc > 1 ? argv[1] : tilewm::default_config_path();
+    {
+        std::string error;
+        if (tilewm::load_config_file(server.config_path.c_str(), server.config,
+                error)) {
+            wlr_log(WLR_INFO, "loaded config %s", server.config_path.c_str());
+        } else {
+            wlr_log(WLR_ERROR, "using built-in defaults (%s: %s)",
+                server.config_path.c_str(), error.c_str());
+        }
+        wlr_log(WLR_INFO, "config: gaps=%d mfact=%.2f nmaster=%d workspaces=%d "
+                "binds=%zu",
+            server.config.gaps, static_cast<double>(server.config.mfact),
+            server.config.nmaster, server.config.workspaces,
+            server.config.keys.size());
+    }
     server.display = wl_display_create();
     assert(server.display && "wl_display_create failed");
 
     struct wl_event_loop *loop = wl_display_get_event_loop(server.display);
+    // SIGHUP reloads the config file without restarting the compositor
+    // (Alt+Shift+R does the same from the keyboard).
+    wl_event_loop_add_signal(loop, SIGHUP, on_reload_signal, &server);
     server.backend = wlr_backend_autocreate(loop, &server.session);
     if (server.backend == nullptr) {
         std::fprintf(stderr, "tilewm: failed to create backend\n");
