@@ -10,9 +10,32 @@ development, or on DRM/KMS on real hardware.
 sudo dnf install gcc gcc-c++ cmake ninja-build pkgconf-pkg-config git \
   wlroots-devel wayland-devel wayland-protocols-devel libxkbcommon-devel \
   libinput-devel pixman-devel libseat-devel mesa-libEGL-devel \
-  mesa-libGLES-devel libdrm-devel systemd-devel \
+  mesa-libGLES-devel libdrm-devel systemd-devel lua-devel \
+  libjpeg-turbo-devel libpng-devel \
   foot wayland-utils wlr-randr
 ```
+
+## Dependencies (Arch Linux)
+
+Same stack, Arch package names (no CMake changes needed: Arch's
+`wlroots0.20` ships the same `wlroots-0.20.pc`). Tested target: ThinkPad
+T480 and friends with Intel graphics.
+
+```
+sudo pacman -S base-devel cmake ninja pkgconf git \
+  wlroots0.20 wayland wayland-protocols libxkbcommon libinput libseat \
+  mesa libdrm lua libjpeg-turbo libpng \
+  foot
+```
+
+## Run on real hardware
+
+Log out to a TTY (e.g. `Ctrl+Alt+F3`), log in, and run `./build/tilewm`
+from there so backend autocreate picks DRM/KMS (with real GLES2/Vulkan
+rendering instead of the nested pixman fallback). A normal TTY login
+gives you the logind session compositors need for input and DRM access;
+on hybrid-GPU laptops stick to the Intel iGPU. Nested testing under an
+existing Wayland/X11 session works exactly like under WSLg.
 
 ## Build
 
