@@ -68,6 +68,16 @@ float get_float_field(lua_State *L, const char *name, float dflt) {
     return v;
 }
 
+std::string get_string_field(lua_State *L, const char *name, const std::string &dflt) {
+    lua_getfield(L, -1, name);
+    std::string v = dflt;
+    if (lua_type(L, -1) == LUA_TSTRING) {
+        v = lua_tostring(L, -1);
+    }
+    lua_pop(L, 1);
+    return v;
+}
+
 // bind(mods, key, action [, arg]) exposed to Lua. The destination vector is
 // passed as a lightuserdata upvalue.
 int l_bind(lua_State *L) {
@@ -138,6 +148,7 @@ bool known_action(const std::string &action) {
 
 Config default_config() {
     Config c;
+    c.wallpaper = default_wallpaper_path();
     bool ok = false;
     auto add = [&](const char *mods, const char *key, const char *action,
                    int arg = 0) {
@@ -169,6 +180,12 @@ std::string default_config_path() {
     return base + "/.config/tilewm/init.lua";
 }
 
+std::string default_wallpaper_path() {
+    const char *home = std::getenv("HOME");
+    std::string base = (home != nullptr && home[0] != '\0') ? home : "/tmp";
+    return base + "/.config/tilewm/wallpaper.jpg";
+}
+
 bool load_config_file(const char *path, Config &out, std::string &error) {
     lua_State *L = luaL_newstate();
     if (L == nullptr) {
@@ -194,6 +211,8 @@ bool load_config_file(const char *path, Config &out, std::string &error) {
         float mfact = get_float_field(L, "mfact", next.mfact);
         int nmaster = get_int_field(L, "nmaster", next.nmaster);
         int workspaces = get_int_field(L, "workspaces", next.workspaces);
+        std::string wallpaper =
+            get_string_field(L, "wallpaper", next.wallpaper);
         if (gaps < 0) {
             gaps = 0;
         }
@@ -219,6 +238,9 @@ bool load_config_file(const char *path, Config &out, std::string &error) {
         next.mfact = mfact;
         next.nmaster = nmaster;
         next.workspaces = workspaces;
+        if (!wallpaper.empty()) {
+            next.wallpaper = wallpaper;
+        }
     }
     lua_pop(L, 1); // config (or the non-table global)
 

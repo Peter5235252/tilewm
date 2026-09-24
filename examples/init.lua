@@ -8,6 +8,7 @@ config = {
     mfact = 0.60,  -- master column width fraction (0.05 .. 0.95)
     nmaster = 1,   -- windows in the master column
     workspaces = 4 -- number of workspaces (1 .. 9)
+    -- wallpaper = os.getenv("HOME") .. "/.config/tilewm/wallpaper.jpg",
 }
 
 bind("Alt", "Return", "spawn-terminal")

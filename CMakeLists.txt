@@ -16,10 +16,13 @@ pkg_check_modules(WLROOTS REQUIRED wlroots-0.20)
 pkg_check_modules(WAYLAND_SERVER REQUIRED wayland-server)
 pkg_check_modules(XKBCOMMON REQUIRED xkbcommon)
 pkg_check_modules(LUA REQUIRED lua)
+pkg_check_modules(JPEG REQUIRED libjpeg)
+pkg_check_modules(PNG REQUIRED libpng)
 
 add_executable(tilewm
   src/main.cpp
   src/config.cpp
+  src/wallpaper.cpp
 )
 
 target_include_directories(tilewm PRIVATE
@@ -27,6 +30,8 @@ target_include_directories(tilewm PRIVATE
   ${WAYLAND_SERVER_INCLUDE_DIRS}
   ${XKBCOMMON_INCLUDE_DIRS}
   ${LUA_INCLUDE_DIRS}
+  ${JPEG_INCLUDE_DIRS}
+  ${PNG_INCLUDE_DIRS}
   src
 )
 
@@ -35,6 +40,8 @@ target_link_directories(tilewm PRIVATE
   ${WAYLAND_SERVER_LIBRARY_DIRS}
   ${XKBCOMMON_LIBRARY_DIRS}
   ${LUA_LIBRARY_DIRS}
+  ${JPEG_LIBRARY_DIRS}
+  ${PNG_LIBRARY_DIRS}
 )
 
 target_link_libraries(tilewm PRIVATE
@@ -42,6 +49,8 @@ target_link_libraries(tilewm PRIVATE
   ${WAYLAND_SERVER_LIBRARIES}
   ${XKBCOMMON_LIBRARIES}
   ${LUA_LIBRARIES}
+  ${JPEG_LIBRARIES}
+  ${PNG_LIBRARIES}
 )
 
 target_compile_options(tilewm PRIVATE
@@ -83,3 +92,24 @@ target_link_libraries(test_config PRIVATE
 )
 target_compile_options(test_config PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME config COMMAND test_config)
+
+# Wallpaper decode test (libjpeg + libpng, no wlroots needed).
+add_executable(test_wallpaper
+  tests/test_wallpaper.cpp
+  src/wallpaper.cpp
+)
+target_include_directories(test_wallpaper PRIVATE
+  src
+  ${JPEG_INCLUDE_DIRS}
+  ${PNG_INCLUDE_DIRS}
+)
+target_link_directories(test_wallpaper PRIVATE
+  ${JPEG_LIBRARY_DIRS}
+  ${PNG_LIBRARY_DIRS}
+)
+target_link_libraries(test_wallpaper PRIVATE
+  ${JPEG_LIBRARIES}
+  ${PNG_LIBRARIES}
+)
+target_compile_options(test_wallpaper PRIVATE -Wall -Wextra -Wpedantic)
+add_test(NAME wallpaper COMMAND test_wallpaper)

@@ -24,7 +24,7 @@ int main() {
         CHECK(c.mfact > 0.54f && c.mfact < 0.56f);
         CHECK(c.nmaster == 1);
         CHECK(c.workspaces == 4);
-        CHECK(!c.keys.empty());
+        CHECK(c.wallpaper.ends_with("tilewm/wallpaper.jpg"));
         bool has_quit = false, has_ws = false;
         for (const auto &k : c.keys) {
             has_quit = has_quit || k.action == "quit";
@@ -66,8 +66,9 @@ int main() {
         const char *path = "/tmp/tilewm-test-init.lua";
         {
             std::ofstream f(path);
-            f << "config = { gaps = 12, mfact = 0.7, nmaster = 2, workspaces = 2 }\n"
-                 "bind(\"Alt\", \"x\", \"close\")\n";
+            f << "config = { gaps = 12, mfact = 0.7, nmaster = 2, workspaces = 2,\n"
+                  "  wallpaper = \"/tmp/wall.jpg\" }\n"
+                  "bind(\"Alt\", \"x\", \"close\")\n";
         }
         Config c = tilewm::default_config();
         std::string err;
@@ -76,6 +77,7 @@ int main() {
         CHECK(c.mfact > 0.69f && c.mfact < 0.71f);
         CHECK(c.nmaster == 2);
         CHECK(c.workspaces == 2);
+        CHECK(c.wallpaper == "/tmp/wall.jpg");
         CHECK(c.keys.size() == 1 && c.keys[0].action == "close");
         std::remove(path);
     }

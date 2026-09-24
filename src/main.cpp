@@ -51,8 +51,11 @@ extern "C" {
 #include <algorithm>
 #include <vector>
 
+#include <drm_fourcc.h>
+
 #include "config.hpp"
 #include "tiling.hpp"
+#include "wallpaper.hpp"
 
 namespace {
 
@@ -62,6 +65,9 @@ struct View;
 struct Output {
     Server *server = nullptr;
     struct wlr_output *wlr_output = nullptr;
+    struct wlr_scene_buffer *bg = nullptr; // wallpaper node (bottom layer)
+    int bg_w = -1;
+    int bg_h = -1;
     struct wl_listener frame{};
     struct wl_listener destroy{};
 };
@@ -107,6 +113,14 @@ struct CursorEvents {
     struct wl_listener frame{};
 };
 
+// Shared wallpaper image uploaded once into an allocator buffer.
+struct Wallpaper {
+    struct wlr_buffer *buffer = nullptr;
+    int img_w = 0;
+    int img_h = 0;
+    std::string tried_path; // last path we attempted (avoid open() per frame)
+};
+
 struct Server {
     struct wl_display *display = nullptr;
     struct wlr_backend *backend = nullptr;
@@ -135,11 +149,13 @@ struct Server {
     int active_workspace = 0;
     tilewm::Config config;
     std::string config_path;
+    Wallpaper wallpaper;
 
     const char *socket = nullptr;
 };
 
 void focus_view(Server *server, View *view);
+void drop_wallpaper(Server *server);
 
 void spawn_terminal() {
     if (fork() == 0) {
@@ -434,6 +450,8 @@ bool reload_config(Server *server) {
         server->config.gaps, static_cast<double>(server->config.mfact),
         server->config.nmaster, server->config.workspaces,
         server->config.keys.size());
+    // A changed wallpaper path rebuilds lazily on the next frame.
+    drop_wallpaper(server);
     return true;
 }
 
@@ -634,9 +652,123 @@ void on_backend_destroy(struct wl_listener *listener, void * /*data*/) {
     wl_display_terminate(server->display);
 }
 
+// Decode the configured wallpaper and upload it once into a shared XRGB
+// allocator buffer. Remembers the last attempted path so a missing file
+// costs one open() instead of one per frame.
+bool upload_wallpaper(Server *server) {
+    if (server->wallpaper.buffer != nullptr) {
+        return true;
+    }
+    std::string path = server->config.wallpaper.empty()
+        ? tilewm::default_wallpaper_path()
+        : server->config.wallpaper;
+    if (path == server->wallpaper.tried_path) {
+        return false;
+    }
+    server->wallpaper.tried_path = path;
+
+    std::vector<uint8_t> rgba;
+    int iw = 0, ih = 0;
+    std::string error;
+    if (!tilewm::decode_image(path.c_str(), rgba, iw, ih, error)) {
+        wlr_log(WLR_ERROR, "wallpaper: %s", error.c_str());
+        return false;
+    }
+    static uint64_t mods[] = {DRM_FORMAT_MOD_LINEAR};
+    static struct wlr_drm_format fmt = {DRM_FORMAT_XRGB8888, 1, 1, mods};
+    struct wlr_buffer *buf =
+        wlr_allocator_create_buffer(server->allocator, iw, ih, &fmt);
+    if (buf == nullptr) {
+        wlr_log(WLR_ERROR, "wallpaper: allocator refused %dx%d buffer", iw, ih);
+        return false;
+    }
+    void *data = nullptr;
+    uint32_t format = 0;
+    size_t stride = 0;
+    if (!wlr_buffer_begin_data_ptr_access(buf, WLR_BUFFER_DATA_PTR_ACCESS_WRITE,
+            &data, &format, &stride) ||
+        format != DRM_FORMAT_XRGB8888) {
+        wlr_buffer_end_data_ptr_access(buf);
+        wlr_buffer_drop(buf);
+        wlr_log(WLR_ERROR, "wallpaper: cannot map buffer as XRGB8888");
+        return false;
+    }
+    auto *px = static_cast<uint8_t *>(data);
+    for (int y = 0; y < ih; ++y) {
+        uint8_t *row = px + static_cast<std::size_t>(y) * stride;
+        const uint8_t *src =
+            rgba.data() + static_cast<std::size_t>(y) * iw * 4;
+        for (int x = 0; x < iw; ++x) {
+            row[4 * x + 0] = src[4 * x + 2];
+            row[4 * x + 1] = src[4 * x + 1];
+            row[4 * x + 2] = src[4 * x + 0];
+            row[4 * x + 3] = 0xFF;
+        }
+    }
+    wlr_buffer_end_data_ptr_access(buf);
+    server->wallpaper.buffer = buf;
+    server->wallpaper.img_w = iw;
+    server->wallpaper.img_h = ih;
+    wlr_log(WLR_INFO, "wallpaper: %dx%d from %s", iw, ih, path.c_str());
+    return true;
+}
+
+void drop_wallpaper(Server *server) {
+    for (Output *o : server->outputs) {
+        if (o->bg != nullptr) {
+            wlr_scene_node_destroy(&o->bg->node);
+            o->bg = nullptr;
+            o->bg_w = o->bg_h = -1;
+        }
+    }
+    if (server->wallpaper.buffer != nullptr) {
+        wlr_buffer_drop(server->wallpaper.buffer);
+        server->wallpaper.buffer = nullptr;
+    }
+    server->wallpaper.img_w = server->wallpaper.img_h = 0;
+    server->wallpaper.tried_path.clear();
+}
+
+// Keep a cover-fit wallpaper behind everything on this output. Cheap
+// per-frame checks; the image uploads once and node creation happens once.
+void ensure_wallpaper(Server *server, Output *output) {
+    if (!upload_wallpaper(server)) {
+        return;
+    }
+    if (output->bg == nullptr) {
+        output->bg = wlr_scene_buffer_create(&server->scene->tree,
+            server->wallpaper.buffer);
+        if (output->bg == nullptr) {
+            return;
+        }
+    }
+    // Always stay behind views, even ones mapped before we existed.
+    wlr_scene_node_lower_to_bottom(&output->bg->node);
+    int ow = 0, oh = 0;
+    wlr_output_effective_resolution(output->wlr_output, &ow, &oh);
+    if (ow == output->bg_w && oh == output->bg_h) {
+        return;
+    }
+    const int iw = server->wallpaper.img_w;
+    const int ih = server->wallpaper.img_h;
+    const float scale =
+        std::max(static_cast<float>(ow) / iw, static_cast<float>(oh) / ih);
+    const int dw = static_cast<int>(iw * scale + 0.5f);
+    const int dh = static_cast<int>(ih * scale + 0.5f);
+    struct wlr_box obox{};
+    wlr_output_layout_get_box(server->output_layout, output->wlr_output, &obox);
+    wlr_scene_node_set_position(&output->bg->node, obox.x + (ow - dw) / 2,
+        obox.y + (oh - dh) / 2);
+    wlr_scene_buffer_set_dest_size(output->bg, dw, dh);
+    output->bg_w = ow;
+    output->bg_h = oh;
+}
+
 void on_output_frame(struct wl_listener *listener, void * /*data*/) {
     Output *output = wl_container_of(listener, output, frame);
     Server *server = output->server;
+
+    ensure_wallpaper(server, output);
 
     struct wlr_scene_output *scene_output =
         wlr_scene_get_scene_output(server->scene, output->wlr_output);
@@ -656,6 +788,10 @@ void on_output_frame(struct wl_listener *listener, void * /*data*/) {
 void on_output_destroy(struct wl_listener *listener, void * /*data*/) {
     Output *output = wl_container_of(listener, output, destroy);
     Server *server = output->server;
+    if (output->bg != nullptr) {
+        wlr_scene_node_destroy(&output->bg->node);
+        output->bg = nullptr;
+    }
     wl_list_remove(&output->frame.link);
     wl_list_remove(&output->destroy.link);
     auto it = std::find(server->outputs.begin(), server->outputs.end(), output);

@@ -28,6 +28,7 @@ struct Config {
     float mfact = 0.55f; // master column width fraction
     int nmaster = 1;     // windows in the master column
     int workspaces = 4;  // number of workspaces (1..9)
+    std::string wallpaper; // background image path (empty = default path)
     std::vector<Keybind> keys;
 };
 
@@ -48,5 +49,9 @@ bool load_config_file(const char *path, Config &out, std::string &error);
 // $HOME/.config/tilewm/init.lua (falls back to /root/... for UID 0, which
 // is why the compositor should run as a normal user).
 std::string default_config_path();
+
+// Default wallpaper location next to the config file. An empty wallpaper
+// field in Config resolves to this.
+std::string default_wallpaper_path();
 
 } // namespace tilewm

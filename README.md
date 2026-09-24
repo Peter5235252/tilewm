@@ -80,6 +80,25 @@ number). Apply changes with `Alt+Shift+R`, with `kill -HUP <tilewm-pid>`,
 or by restarting. A custom path works too: `tilewm /path/to/init.lua`.
 Missing or broken files fall back to built-in defaults with a log line.
 
+## Wallpaper
+
+`config = { wallpaper = "/path/to/image.jpg" }` (PNG or JPEG) sets the
+background, cover-fit per output behind all windows; empty means
+`~/.config/tilewm/wallpaper.jpg`. Changing it and reloading (`Alt+Shift+R`
+or `SIGHUP`) swaps it live. The shipped `assets/wallpaper.jpg` is the
+default - copy it next to your `init.lua`.
+
+## Terminal font (foot)
+
+foot warns when it falls back to proportional Noto Sans. Use a real
+monospace font:
+
+```
+sudo dnf install dejavu-sans-mono-fonts
+mkdir -p ~/.config/foot
+cp examples/foot.ini ~/.config/foot/foot.ini
+```
+
 ## Roadmap
 
 - Phase 1 (done): bring-up, scene rendering, floating xdg-shell views, focus.

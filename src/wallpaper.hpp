@@ -1,0 +1,15 @@
+#pragma once
+
+// Image decoding for tilewm wallpapers: PNG/JPEG (sniffed by magic bytes)
+// decoded to 8-bit RGBA. Pure CPU code, no wlroots types, unit-testable.
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace tilewm {
+
+bool decode_image(const char *path, std::vector<uint8_t> &rgba, int &width,
+    int &height, std::string &error);
+
+} // namespace tilewm
