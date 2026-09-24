@@ -160,7 +160,27 @@ cp examples/foot.ini ~/.config/foot/foot.ini
 ## Roadmap
 
 - Phase 1 (done): bring-up, scene rendering, floating xdg-shell views, focus.
-- Phase 2 (here): master-stack tiling, focus cycling, floating toggle,
-  4 workspaces.
-- Phase 3: layer-shell bar support, XWayland, config file (gaps, mfact,
-  nmaster, keybinds), multi-output polish.
+- Phase 2 (done): master-stack tiling, focus cycling, floating toggle,
+  workspaces, clean shutdown handling.
+- Phase 3a (done): embedded Lua config (`init.lua`, hot-reload),
+  wallpaper backgrounds, foot font fix.
+- Phase 3b (next): layer-shell bar support with exclusive zone.
+- Phase 3c: XWayland support for legacy X11 apps.
+- Installer (done): one-liner `setup.sh` plus `install.sh` for Arch
+  and Fedora, with package manifests and a `--testmode` dry run.
+
+## Distro support, now and later
+
+tilewm supports **Arch Linux and Fedora only, for now.** Every dependency
+comes from their official repositories (no AUR, no COPR), which is what
+keeps the installer honest and maintainable.
+
+As the project matures, **NixOS support is planned, most likely through
+Flakes** — but that is a long-term goal, not a roadmap date. Packaging a
+pinned, reproducible wlroots/Lua toolchain as flake inputs is a project of
+its own, and doing it properly will take a long, long time.
+
+**Debian and Ubuntu are not guaranteed at all.** Their slower-moving
+release cycles ship wlroots and Wayland libraries far older than a current
+compositor needs, and backporting around that is not something this
+project will take on. If that ever changes, this section will say so.
