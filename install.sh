@@ -277,69 +277,104 @@ install_deps() {
 }
 
 # ---------------------------------------------------------------------------
-# 6. NixOS flake: offer to generate a minimal one when the checkout lacks
-#    it (old revision, partial copy), instead of dying on the spot.
+# 6. Checkout verification: confirm DEST actually looks like tilewm before
+#    anything builds from it. This step never writes into the checkout:
+#    a broken tree offers update, fresh clone, or quit instead.
 # ---------------------------------------------------------------------------
-ensure_flake() {
-    [ -f "$DEST/flake.nix" ] && return 0
-    warn "$DEST has no flake.nix, so nix build cannot run."
-    if [ "$ASSUME_YES" -eq 1 ] || confirm "Generate a minimal flake.nix here and proceed?"; then
-        [ -d "$DEST" ] || die "$DEST does not exist; cannot create flake.nix there. Re-run with a valid --source or --prefix."
-        [ -w "$DEST" ] || die "$DEST is not writable; fix permissions and re-run."
-        log "writing minimal $DEST/flake.nix (the repo version stays canonical) ..."
-        cat > "$DEST/flake.nix" <<'FLAKE_EOF'
-{
-  description = "tilewm (minimal generated flake)";
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  outputs =
-    { self, nixpkgs }:
-    let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs { inherit system; };
-    in
-    {
-      packages.${system}.default = pkgs.stdenv.mkDerivation {
-        pname = "tilewm";
-        version = "0.1.0";
-        src = ./.;
-        nativeBuildInputs = with pkgs; [
-          cmake
-          ninja
-          pkg-config
-        ];
-        buildInputs = with pkgs; [
-          wlroots_0_20
-          wayland
-          wayland-protocols
-          libxkbcommon
-          libinput
-          pixman
-          seatd
-          mesa
-          libdrm
-          lua
-          libjpeg_turbo
-          libpng
-        ];
-        doCheck = true;
-      };
-    };
-}
-FLAKE_EOF
-        [ -f "$DEST/flake.nix" ] \
-            || die "failed to write $DEST/flake.nix (disk full or permissions?)."
-        # Nix only sees git-tracked files for flake evaluation: mark the
-        # generated file intent-to-add so the build below can find it.
-        if command -v git >/dev/null 2>&1 \
-            && git -C "$DEST" rev-parse --git-dir >/dev/null 2>&1; then
-            git -C "$DEST" add -N flake.nix 2>/dev/null \
-                || warn "could not stage flake.nix; nix build may report it missing."
-        else
-            warn "no git available for $DEST: if it is a git checkout, nix build may report flake.nix missing until the file is tracked (git add -N flake.nix)."
-        fi
-    else
-        die "no flake.nix: use a checkout that includes it, then re-run."
+checkout_problems() {
+    # Prints missing marker files, space-separated; empty means healthy.
+    # flake.nix is required only on NixOS (it does not exist in old
+    # revisions, which is itself a sign the checkout needs updating).
+    missing=""
+    for marker in CMakeLists.txt src/main.cpp README.md; do
+        [ -e "$DEST/$marker" ] || missing="$missing $marker"
+    done
+    if [ "$DISTRO" = "nixos" ]; then
+        [ -e "$DEST/flake.nix" ] || missing="$missing flake.nix"
     fi
+    printf '%s' "$missing"
+}
+
+clone_repo() {
+    # clone_repo <target>: shallow, bounded, retried clone of REPO_URL.
+    # An install needs files, not history (unshallow later with
+    # git -C <target> fetch --unshallow). The small transfer window also
+    # sidesteps the notorious hang after "Resolving deltas: 100%".
+    target="$1"
+    log "cloning into $target ..."
+    attempt=1
+    while [ "$attempt" -le 2 ]; do
+        if timeout 300 git clone --depth 1 "$REPO_URL" "$target"; then
+            return 0
+        fi
+        warn "clone attempt $attempt failed or timed out; retrying ..."
+        rm -rf "$target"
+        attempt=$((attempt + 1))
+        sleep 3
+    done
+    return 1
+}
+
+verify_checkout() {
+    missing="$(checkout_problems)"
+    [ -z "$missing" ] && return 0
+    warn "$DEST does not look like a tilewm checkout; missing:$missing"
+    log "likely causes: an old revision from before a file existed, a partial download, or the wrong directory."
+    if [ "$ASSUME_YES" -eq 1 ]; then
+        die "cannot proceed automatically with a broken checkout. Fix $DEST by hand (or re-run without --yes to choose a repair)."
+    fi
+    while true; do
+        if [ "$USE_GUM" -eq 1 ]; then
+            if picked="$(gum choose --header "How to fix the checkout?" \
+                "Update with git pull" \
+                "Clone a fresh copy" \
+                "Quit")"; then
+                case "$picked" in
+                    *Update*) choice=1 ;;
+                    *fresh*) choice=2 ;;
+                    *) choice=q ;;
+                esac
+            else
+                choice=q
+            fi
+        else
+            echo "1) Update with git pull (keeps this directory)" >&2
+            echo "2) Clone a fresh copy" >&2
+            echo "3) Quit" >&2
+            printf 'Choice [1-3] (default 3): ' >&2
+            read -r choice || choice=q
+        fi
+        case "$choice" in
+            1)
+                if [ ! -d "$DEST/.git" ]; then
+                    warn "$DEST is not a git checkout, so update is impossible here."
+                    continue
+                fi
+                if git -C "$DEST" pull --ff-only; then
+                    log "updated."
+                else
+                    warn "git pull failed (local changes?). Resolve them and choose again."
+                    continue
+                fi
+                ;;
+            2)
+                fresh="$DEST-fresh"
+                [ -e "$fresh" ] && fresh="$fresh-$(date +%Y%m%d-%H%M%S)"
+                if clone_repo "$fresh"; then
+                    DEST="$fresh"
+                    log "fresh checkout at $DEST."
+                else
+                    warn "fresh clone failed; try again or quit."
+                    continue
+                fi
+                ;;
+            *)
+                die "aborted by user. Point --source at a healthy checkout and re-run."
+                ;;
+        esac
+        missing="$(checkout_problems)"
+        [ -z "$missing" ] && return 0
+    done
 }
 
 # ---------------------------------------------------------------------------
@@ -356,35 +391,21 @@ fetch_source() {
             git -C "$DEST" pull --ff-only \
                 || die "$DEST has local changes; stash or move them first."
         else
-            # Same shallow + bounded + retried policy as setup.sh: an
-            # install needs files, not history (unshallow later with
-            # git -C "$DEST" fetch --unshallow). This also sidesteps the
-            # notorious hang after "Resolving deltas: 100%".
-            log "cloning into $DEST ..."
-            attempt=1
-            while [ "$attempt" -le 2 ]; do
-                if timeout 300 git clone --depth 1 "$REPO_URL" "$DEST"; then
-                    break
-                fi
-                warn "clone attempt $attempt failed or timed out; retrying ..."
-                rm -rf "$DEST"
-                attempt=$((attempt + 1))
-                sleep 3
-            done
-            [ -d "$DEST/.git" ] || die "could not clone $REPO_URL. Check network/proxy, antivirus, disk space, git version; then re-run."
+            clone_repo "$DEST" \
+                || die "could not clone $REPO_URL. Check network/proxy, antivirus, disk space, git version; then re-run."
         fi
     fi
+    verify_checkout
     printf '%s\n' "$DEST"
 }
 
 # ---------------------------------------------------------------------------
-# 7. Build + test.
+# 8. Build + test.
 # ---------------------------------------------------------------------------
 build_all() {
     if [ "$DISTRO" = "nixos" ]; then
-        ensure_flake
         [ -d "$DEST" ] || die "$DEST vanished before the build; re-run the installer."
-        [ -f "$DEST/flake.nix" ] || die "$DEST/flake.nix is missing; cannot run nix build. Re-run and accept generation."
+        [ -f "$DEST/flake.nix" ] || die "$DEST/flake.nix is missing; the checkout verification should have caught this, please report it."
         source_nix_profile
         command -v nix >/dev/null 2>&1 || die "nix is not available in this shell; open a login shell and re-run."
         log "building with nix (tests run as part of the build) ..."
@@ -400,7 +421,7 @@ build_all() {
 }
 
 # ---------------------------------------------------------------------------
-# 8. Example configs (with backups, never silent overwrites).
+# 9. Example configs (with backups, never silent overwrites).
 # ---------------------------------------------------------------------------
 install_file() {
     # install_file <repo-relative-src> <dest-path>
