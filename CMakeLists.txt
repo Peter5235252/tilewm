@@ -18,6 +18,7 @@ pkg_check_modules(XKBCOMMON REQUIRED xkbcommon)
 pkg_check_modules(LUA REQUIRED lua)
 pkg_check_modules(JPEG REQUIRED libjpeg)
 pkg_check_modules(PNG REQUIRED libpng)
+pkg_check_modules(DRM REQUIRED libdrm)
 
 add_executable(tilewm
   src/main.cpp
@@ -32,6 +33,7 @@ target_include_directories(tilewm PRIVATE
   ${LUA_INCLUDE_DIRS}
   ${JPEG_INCLUDE_DIRS}
   ${PNG_INCLUDE_DIRS}
+  ${DRM_INCLUDE_DIRS}
   src
 )
 
@@ -42,6 +44,7 @@ target_link_directories(tilewm PRIVATE
   ${LUA_LIBRARY_DIRS}
   ${JPEG_LIBRARY_DIRS}
   ${PNG_LIBRARY_DIRS}
+  ${DRM_LIBRARY_DIRS}
 )
 
 target_link_libraries(tilewm PRIVATE
@@ -51,6 +54,7 @@ target_link_libraries(tilewm PRIVATE
   ${LUA_LIBRARIES}
   ${JPEG_LIBRARIES}
   ${PNG_LIBRARIES}
+  ${DRM_LIBRARIES}
 )
 
 target_compile_options(tilewm PRIVATE
@@ -113,3 +117,6 @@ target_link_libraries(test_wallpaper PRIVATE
 )
 target_compile_options(test_wallpaper PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME wallpaper COMMAND test_wallpaper)
+
+include(GNUInstallDirs)
+install(TARGETS tilewm RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

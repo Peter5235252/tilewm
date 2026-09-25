@@ -206,7 +206,8 @@ bool load_config_file(const char *path, Config &out, std::string &error) {
     }
 
     Config next = out;
-    if (lua_getglobal(L, "config") == LUA_TTABLE) {
+    lua_getglobal(L, "config");
+    if (lua_istable(L, -1)) {
         int gaps = get_int_field(L, "gaps", next.gaps);
         float mfact = get_float_field(L, "mfact", next.mfact);
         int nmaster = get_int_field(L, "nmaster", next.nmaster);

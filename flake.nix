@@ -34,11 +34,11 @@
         pkgs.libxkbcommon
         pkgs.libinput
         pkgs.pixman
-        pkgs.libseat
+        pkgs.seatd # provides libseat
         pkgs.mesa
         pkgs.libdrm
         pkgs.lua
-        pkgs.libjpeg-turbo
+        pkgs.libjpeg_turbo
         pkgs.libpng
       ];
 
