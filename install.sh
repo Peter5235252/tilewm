@@ -57,7 +57,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-log()  { printf '==> %s\n' "$*"; }
+log()  { printf '==> %s\n' "$*" >&2; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 
@@ -281,6 +281,7 @@ ensure_flake() {
     [ -f "$DEST/flake.nix" ] && return 0
     warn "$DEST has no flake.nix, so nix build cannot run."
     if [ "$ASSUME_YES" -eq 1 ] || confirm "Generate a minimal flake.nix here and proceed?"; then
+        [ -w "$DEST" ] || die "$DEST is not writable; fix permissions and re-run."
         log "writing minimal $DEST/flake.nix (the repo version stays canonical) ..."
         cat > "$DEST/flake.nix" <<'FLAKE_EOF'
 {
