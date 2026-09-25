@@ -78,4 +78,5 @@ else
     [ -d "$DEST/.git" ] || die "could not clone $REPO_URL. Check network/proxy (env | grep -i proxy), antivirus scanning the target dir, free disk space, and git version (git --version). Then re-run."
 fi
 
+[ -f "$DEST/install.sh" ] || die "checkout at $DEST looks incomplete (install.sh missing); remove $DEST and re-run."
 exec "$DEST/install.sh" "$@"

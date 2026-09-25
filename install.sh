@@ -203,10 +203,9 @@ fi
 # NixOS: no system packages (the flake provides the whole toolchain).
 # Instead: require nix itself, flakes enabled, and a git to fetch with.
 # ---------------------------------------------------------------------------
-ensure_nix() {
-    # Nix might be installed but not on PATH in this shell (e.g. Fedora
-    # plus the Determinate installer in a non-login shell): source the
-    # well-known profile snippets before concluding it is missing.
+# Nix may be installed but invisible to this shell (e.g. Determinate Nix
+# in a non-login shell): source the well-known profile snippets first.
+source_nix_profile() {
     if ! command -v nix >/dev/null 2>&1; then
         for profile in "$HOME/.nix-profile/etc/profile.d/nix.sh" \
                        "/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh"; do
@@ -217,6 +216,10 @@ ensure_nix() {
             fi
         done
     fi
+}
+
+ensure_nix() {
+    source_nix_profile
     command -v nix >/dev/null 2>&1 || die "Nix is not installed. Install it first: bash <(curl -s https://install.determinate.systems/nix) -- then re-run this script."
     if ! nix show-config 2>/dev/null | grep -e experimental-features | grep -q -e flake; then
         log "Nix flakes are not enabled."
@@ -281,6 +284,7 @@ ensure_flake() {
     [ -f "$DEST/flake.nix" ] && return 0
     warn "$DEST has no flake.nix, so nix build cannot run."
     if [ "$ASSUME_YES" -eq 1 ] || confirm "Generate a minimal flake.nix here and proceed?"; then
+        [ -d "$DEST" ] || die "$DEST does not exist; cannot create flake.nix there. Re-run with a valid --source or --prefix."
         [ -w "$DEST" ] || die "$DEST is not writable; fix permissions and re-run."
         log "writing minimal $DEST/flake.nix (the repo version stays canonical) ..."
         cat > "$DEST/flake.nix" <<'FLAKE_EOF'
@@ -322,10 +326,17 @@ ensure_flake() {
     };
 }
 FLAKE_EOF
+        [ -f "$DEST/flake.nix" ] \
+            || die "failed to write $DEST/flake.nix (disk full or permissions?)."
         # Nix only sees git-tracked files for flake evaluation: mark the
         # generated file intent-to-add so the build below can find it.
-        # Harmless if already tracked or if git is absent.
-        git -C "$DEST" add -N flake.nix 2>/dev/null || true
+        if command -v git >/dev/null 2>&1 \
+            && git -C "$DEST" rev-parse --git-dir >/dev/null 2>&1; then
+            git -C "$DEST" add -N flake.nix 2>/dev/null \
+                || warn "could not stage flake.nix; nix build may report it missing."
+        else
+            warn "no git available for $DEST: if it is a git checkout, nix build may report flake.nix missing until the file is tracked (git add -N flake.nix)."
+        fi
     else
         die "no flake.nix: use a checkout that includes it, then re-run."
     fi
@@ -372,6 +383,10 @@ fetch_source() {
 build_all() {
     if [ "$DISTRO" = "nixos" ]; then
         ensure_flake
+        [ -d "$DEST" ] || die "$DEST vanished before the build; re-run the installer."
+        [ -f "$DEST/flake.nix" ] || die "$DEST/flake.nix is missing; cannot run nix build. Re-run and accept generation."
+        source_nix_profile
+        command -v nix >/dev/null 2>&1 || die "nix is not available in this shell; open a login shell and re-run."
         log "building with nix (tests run as part of the build) ..."
         (cd "$DEST" && nix build)
         log "artifact: $DEST/result/bin/tilewm"
