@@ -61,8 +61,21 @@ fi
 if [ -d "$DEST/.git" ]; then
     echo "setup: using existing checkout at $DEST"
 else
-    echo "setup: cloning into $DEST ..."
-    git clone "$REPO_URL" "$DEST"
+    # Shallow, bounded, retried: an installer needs files, not history,
+    # and a smaller transfer window dodges transient stalls - including
+    # the classic hang after "Resolving deltas: 100%". Full history later:
+    #   git -C "$DEST" fetch --unshallow
+    attempt=1
+    while [ "$attempt" -le 2 ]; do
+        if timeout 300 git clone --depth 1 "$REPO_URL" "$DEST"; then
+            break
+        fi
+        echo "setup: clone attempt $attempt failed or timed out; retrying ..."
+        rm -rf "$DEST"
+        attempt=$((attempt + 1))
+        sleep 3
+    done
+    [ -d "$DEST/.git" ] || die "could not clone $REPO_URL. Check network/proxy (env | grep -i proxy), antivirus scanning the target dir, free disk space, and git version (git --version). Then re-run."
 fi
 
 exec "$DEST/install.sh" "$@"

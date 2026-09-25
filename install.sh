@@ -256,8 +256,22 @@ fetch_source() {
             git -C "$DEST" pull --ff-only \
                 || die "$DEST has local changes; stash or move them first."
         else
+            # Same shallow + bounded + retried policy as setup.sh: an
+            # install needs files, not history (unshallow later with
+            # git -C "$DEST" fetch --unshallow). This also sidesteps the
+            # notorious hang after "Resolving deltas: 100%".
             log "cloning into $DEST ..."
-            git clone "$REPO_URL" "$DEST"
+            attempt=1
+            while [ "$attempt" -le 2 ]; do
+                if timeout 300 git clone --depth 1 "$REPO_URL" "$DEST"; then
+                    break
+                fi
+                warn "clone attempt $attempt failed or timed out; retrying ..."
+                rm -rf "$DEST"
+                attempt=$((attempt + 1))
+                sleep 3
+            done
+            [ -d "$DEST/.git" ] || die "could not clone $REPO_URL. Check network/proxy, antivirus, disk space, git version; then re-run."
         fi
     fi
     printf '%s\n' "$DEST"
