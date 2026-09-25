@@ -32,9 +32,9 @@ itself with flakes enabled first (the scripts tell you exactly what to
 run if either is missing — on a fresh machine that means installing Nix,
 then re-running the one-liner), and nothing touches system packages:
 `nix build` produces `./result/bin/tilewm`, while `nix develop` drops
-you into a shell with every build dependency. NixOS support lives on
-main and is verified by CI-style `nix build` runs; a NixOS module is
-future work.
+you into a shell with every build dependency. My ThinkPad T480 runs
+NixOS, so I test this path on real hardware firsthand — if you try it
+elsewhere, reports are welcome. A NixOS module is future work.
 
 The script detects Arch vs Fedora vs NixOS, installs system packages on
 Arch/Fedora (sudo is used only for that step — never run the script
@@ -51,7 +51,7 @@ redirected to a temp dir).
 Prefer doing it by hand? The exact package sets are listed below, then the
 same `cmake` build as everywhere.
 
-## NixOS (experimental, `nixos-support` branch)
+## NixOS
 
 A flake provides a pinned dev shell and package (nixpkgs unstable,
 wlroots 0.20.x — the same `wlroots-0.20.pc`, so no CMake changes):
@@ -61,9 +61,10 @@ nix develop   # shell with every build dependency
 nix build     # ./result/bin/tilewm (tests run as part of the build)
 ```
 
-Status: written but not yet verified on real NixOS — see the branch. The
-long-term goal is a proper NixOS module/home-manager story; that part
-will take a while.
+Status: builds green via `nix build` (test suite runs inside the build).
+My ThinkPad T480 runs NixOS, so real-hardware verification happens
+firsthand. The long-term goal is a proper NixOS module/home-manager
+story; that part will take a while.
 
 ## Dependencies (Fedora 44)
 
