@@ -61,6 +61,12 @@ log()  { printf '==> %s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+# A TUI helper counts only if it is present AND executable: a broken
+# install must degrade to plain prompts, never to a blank hang.
+have_gum() {
+    command -v gum >/dev/null 2>&1 && [ -x "$(command -v gum)" ]
+}
+
 # ---------------------------------------------------------------------------
 # 1. Safety: never as root.
 # ---------------------------------------------------------------------------
@@ -105,8 +111,13 @@ read_manifest() {
 # 3. TUI: gum when available, plain prompts otherwise.
 # ---------------------------------------------------------------------------
 USE_GUM=0
-if command -v gum >/dev/null 2>&1; then
-    USE_GUM=1
+# TUIs need a real terminal on both ends: without one, gum-style tools
+# hang silently instead of failing (a blank screen that never returns).
+if have_gum && [ -t 0 ] && [ -t 1 ]; then
+    case "${TERM:-dumb}" in
+        dumb|"") log "plain prompts (TERM=${TERM:-unset})" ;;
+        *) USE_GUM=1 ;;
+    esac
 fi
 
 confirm() {
@@ -115,12 +126,15 @@ confirm() {
         return 0
     fi
     if [ "$USE_GUM" -eq 1 ]; then
-        gum confirm "$1"
-    else
-        printf '%s [y/N] ' "$1"
-        read -r answer
-        [ "$answer" = "y" ] || [ "$answer" = "Y" ]
+        if gum confirm "$1"; then
+            return 0
+        fi
+        warn "gum failed; falling back to plain prompts."
+        USE_GUM=0
     fi
+    printf '%s [y/N] ' "$1"
+    read -r answer
+    [ "$answer" = "y" ] || [ "$answer" = "Y" ]
 }
 
 choose_mode() {
@@ -130,29 +144,33 @@ choose_mode() {
         return 0
     fi
     if [ "$USE_GUM" -eq 1 ]; then
-        gum choose --header "What should the installer do?" \
+        if choice="$(gum choose --header "What should the installer do?" \
             "Install everything" \
             "Dependencies only" \
             "Build and test only" \
-            "Deploy example configs only" | awk '{
-                if ($0 ~ /Dependencies/) print "deps";
-                else if ($0 ~ /Build/) print "build";
-                else if ($0 ~ /configs/) print "config";
-                else print "all" }'
-    else
-        echo "1) Install everything"
-        echo "2) Dependencies only"
-        echo "3) Build and test only"
-        echo "4) Deploy example configs only"
-        printf 'Choice [1-4] (default 1): '
-        read -r choice
-        case "${choice:-1}" in
-            2) echo "deps" ;;
-            3) echo "build" ;;
-            4) echo "config" ;;
-            *) echo "all" ;;
-        esac
+            "Deploy example configs only")"; then
+            case "$choice" in
+                *Dependencies*) echo "deps"; return 0 ;;
+                *Build*) echo "build"; return 0 ;;
+                *configs*) echo "config"; return 0 ;;
+                *) echo "all"; return 0 ;;
+            esac
+        fi
+        warn "gum failed; falling back to plain prompts."
+        USE_GUM=0
     fi
+    echo "1) Install everything" >&2
+    echo "2) Dependencies only" >&2
+    echo "3) Build and test only" >&2
+    echo "4) Deploy example configs only" >&2
+    printf 'Choice [1-4] (default 1): ' >&2
+    read -r choice
+    case "${choice:-1}" in
+        2) echo "deps" ;;
+        3) echo "build" ;;
+        4) echo "config" ;;
+        *) echo "all" ;;
+    esac
 }
 
 run_step() {
@@ -186,6 +204,19 @@ fi
 # Instead: require nix itself, flakes enabled, and a git to fetch with.
 # ---------------------------------------------------------------------------
 ensure_nix() {
+    # Nix might be installed but not on PATH in this shell (e.g. Fedora
+    # plus the Determinate installer in a non-login shell): source the
+    # well-known profile snippets before concluding it is missing.
+    if ! command -v nix >/dev/null 2>&1; then
+        for profile in "$HOME/.nix-profile/etc/profile.d/nix.sh" \
+                       "/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh"; do
+            if [ -f "$profile" ]; then
+                # shellcheck disable=SC1090
+                . "$profile"
+                break
+            fi
+        done
+    fi
     command -v nix >/dev/null 2>&1 || die "Nix is not installed. Install it first: bash <(curl -s https://install.determinate.systems/nix) -- then re-run this script."
     if ! nix show-config 2>/dev/null | grep -e experimental-features | grep -q -e flake; then
         log "Nix flakes are not enabled."
@@ -213,7 +244,7 @@ ensure_nix() {
             log "continuing with plain prompts."
         fi
     fi
-    command -v gum >/dev/null 2>&1 && USE_GUM=1
+    have_gum && USE_GUM=1
     log "Nix toolchain ready; build dependencies come from flake.nix."
 }
 
@@ -243,7 +274,64 @@ install_deps() {
 }
 
 # ---------------------------------------------------------------------------
-# 6. Source: clone or fast-forward.
+# 6. NixOS flake: offer to generate a minimal one when the checkout lacks
+#    it (old revision, partial copy), instead of dying on the spot.
+# ---------------------------------------------------------------------------
+ensure_flake() {
+    [ -f "$DEST/flake.nix" ] && return 0
+    warn "$DEST has no flake.nix, so nix build cannot run."
+    if [ "$ASSUME_YES" -eq 1 ] || confirm "Generate a minimal flake.nix here and proceed?"; then
+        log "writing minimal $DEST/flake.nix (the repo version stays canonical) ..."
+        cat > "$DEST/flake.nix" <<'FLAKE_EOF'
+{
+  description = "tilewm (minimal generated flake)";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  outputs =
+    { self, nixpkgs }:
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs { inherit system; };
+    in
+    {
+      packages.${system}.default = pkgs.stdenv.mkDerivation {
+        pname = "tilewm";
+        version = "0.1.0";
+        src = ./.;
+        nativeBuildInputs = with pkgs; [
+          cmake
+          ninja
+          pkg-config
+        ];
+        buildInputs = with pkgs; [
+          wlroots_0_20
+          wayland
+          wayland-protocols
+          libxkbcommon
+          libinput
+          pixman
+          seatd
+          mesa
+          libdrm
+          lua
+          libjpeg_turbo
+          libpng
+        ];
+        doCheck = true;
+      };
+    };
+}
+FLAKE_EOF
+        # Nix only sees git-tracked files for flake evaluation: mark the
+        # generated file intent-to-add so the build below can find it.
+        # Harmless if already tracked or if git is absent.
+        git -C "$DEST" add -N flake.nix 2>/dev/null || true
+    else
+        die "no flake.nix: use a checkout that includes it, then re-run."
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# 7. Source: clone or fast-forward.
 # ---------------------------------------------------------------------------
 fetch_source() {
     if [ -n "$SOURCE_DIR" ]; then
@@ -282,8 +370,7 @@ fetch_source() {
 # ---------------------------------------------------------------------------
 build_all() {
     if [ "$DISTRO" = "nixos" ]; then
-        [ -f "$DEST/flake.nix" ] \
-            || die "$DEST has no flake.nix (use a checkout that includes it)."
+        ensure_flake
         log "building with nix (tests run as part of the build) ..."
         (cd "$DEST" && nix build)
         log "artifact: $DEST/result/bin/tilewm"
