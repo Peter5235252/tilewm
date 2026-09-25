@@ -175,10 +175,10 @@ tilewm supports **Arch Linux and Fedora only, for now.** Every dependency
 comes from their official repositories (no AUR, no COPR), which is what
 keeps the installer honest and maintainable.
 
-As the project matures, **NixOS support is planned, most likely through
-Flakes** — but that is a long-term goal, not a roadmap date. Packaging a
-pinned, reproducible wlroots/Lua toolchain as flake inputs is a project of
-its own, and doing it properly will take a long, long time.
+As the project matures, **NixOS support is actively being worked on**
+(see the `nixos-support` branch), most likely through Flakes — but it is
+early days and it will take a while to do properly. Pinned, reproducible
+wlroots/Lua toolchains per flake input is a project of its own.
 
 **Debian and Ubuntu are not guaranteed at all.** Their slower-moving
 release cycles ship wlroots and Wayland libraries far older than a current
