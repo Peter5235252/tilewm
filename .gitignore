@@ -2,6 +2,10 @@
 build/
 cmake-build-*/
 
+# Nix build symlinks
+result
+result-*
+
 # CMake / Ninja artifacts
 CMakeCache.txt
 CMakeFiles/

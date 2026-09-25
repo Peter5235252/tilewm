@@ -39,6 +39,20 @@ with HOME redirected to a temp dir).
 Prefer doing it by hand? The exact package sets are listed below, then the
 same `cmake` build as everywhere.
 
+## NixOS (experimental, `nixos-support` branch)
+
+A flake provides a pinned dev shell and package (nixpkgs unstable,
+wlroots 0.20.x — the same `wlroots-0.20.pc`, so no CMake changes):
+
+```
+nix develop   # shell with every build dependency
+nix build     # ./result/bin/tilewm (tests run as part of the build)
+```
+
+Status: written but not yet verified on real NixOS — see the branch. The
+long-term goal is a proper NixOS module/home-manager story; that part
+will take a while.
+
 ## Dependencies (Fedora 44)
 
 ```
