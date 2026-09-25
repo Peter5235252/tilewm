@@ -15,12 +15,6 @@ DEST="${TILEWM_DEST:-$HOME/tilewm}"
 die() { printf 'setup: error: %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -ne 0 ] || die "do not run as root."
-if ! sudo -n true 2>/dev/null; then
-    if [ ! -t 0 ]; then
-        die "sudo needs a password but there is no terminal. Authenticate (sudo -v), then re-run."
-    fi
-    sudo -v || die "sudo authentication failed."
-fi
 
 DISTRO=""
 if [ -r /etc/os-release ]; then
@@ -29,16 +23,38 @@ if [ -r /etc/os-release ]; then
     case "${ID:-} ${ID_LIKE:-}" in
         *arch*) DISTRO="arch" ;;
         *fedora*) DISTRO="fedora" ;;
+        *nixos*) DISTRO="nixos" ;;
     esac
 fi
-[ -n "$DISTRO" ] || die "unsupported distro: tilewm supports Arch Linux and Fedora only, for now."
+[ -n "$DISTRO" ] || die "unsupported distro: tilewm supports Arch Linux, Fedora and NixOS only, for now."
 
-if ! command -v git >/dev/null 2>&1; then
-    echo "setup: installing git ..."
-    if [ "$DISTRO" = "arch" ]; then
-        sudo pacman -S --needed --noconfirm git
-    else
-        sudo dnf install -y git
+# sudo is only needed for system packages (Arch/Fedora). NixOS installs
+# everything user-local via profiles, so skip it there entirely.
+if [ "$DISTRO" != "nixos" ]; then
+    if ! sudo -n true 2>/dev/null; then
+        if [ ! -t 0 ]; then
+            die "sudo needs a password but there is no terminal. Authenticate (sudo -v), then re-run."
+        fi
+        sudo -v || die "sudo authentication failed."
+    fi
+fi
+
+if [ "$DISTRO" = "nixos" ]; then
+    # On NixOS there are no system packages to install: the flake provides
+    # the toolchain. We only need nix itself (with flakes) and a git.
+    command -v nix >/dev/null 2>&1 || die "Nix is not installed. Install it first: bash <(curl -s https://install.determinate.systems/nix) -- then re-run this script."
+    if ! command -v git >/dev/null 2>&1; then
+        echo "setup: installing git into your nix profile ..."
+        nix profile install nixpkgs#git
+    fi
+else
+    if ! command -v git >/dev/null 2>&1; then
+        echo "setup: installing git ..."
+        if [ "$DISTRO" = "arch" ]; then
+            sudo pacman -S --needed --noconfirm git
+        else
+            sudo dnf install -y git
+        fi
     fi
 fi
 

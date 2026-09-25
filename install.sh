@@ -62,33 +62,35 @@ warn() { printf 'warning: %s\n' "$*" >&2; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
-# 1. Safety: never as root, sudo up front.
+# 1. Safety: never as root.
 # ---------------------------------------------------------------------------
 [ "$(id -u)" -ne 0 ] || die "do not run as root; sudo is requested only for packages."
 
-# Fail fast when sudo would need a password we cannot provide: a hanging
-# password prompt with no terminal looks exactly like a frozen installer.
-if ! sudo -n true 2>/dev/null; then
-    if [ ! -t 0 ]; then
-        die "sudo needs a password but there is no terminal to ask on. Authenticate first (sudo -v) in a real terminal, then re-run."
-    fi
-    warn "sudo authentication required for the package step ..."
-    sudo -v || die "sudo authentication failed."
-fi
-
 # ---------------------------------------------------------------------------
-# 2. Distro detection: Arch family or Fedora, nothing else (for now).
+# 2. Distro detection: Arch, Fedora or NixOS, nothing else (for now).
 # ---------------------------------------------------------------------------
 DISTRO=""
 if [ -r /etc/os-release ]; then
     # shellcheck disable=SC1091
     . /etc/os-release
     case "${ID:-} ${ID_LIKE:-}" in
-        *arch*)  DISTRO="arch" ;;
+        *arch*) DISTRO="arch" ;;
         *fedora*) DISTRO="fedora" ;;
+        *nixos*) DISTRO="nixos" ;;
     esac
 fi
-[ -n "$DISTRO" ] || die "unsupported distro (ID=${ID:-unknown}): tilewm supports Arch Linux and Fedora only, for now."
+[ -n "$DISTRO" ] || die "unsupported distro (ID=${ID:-unknown}): tilewm supports Arch Linux, Fedora and NixOS only, for now."
+
+# Fail fast when sudo would need a password we cannot provide: a hanging
+# password prompt with no terminal looks exactly like a frozen installer.
+# Skipped on NixOS, where everything installs user-local via nix profiles.
+if [ "$DISTRO" != "nixos" ] && ! sudo -n true 2>/dev/null; then
+    if [ ! -t 0 ]; then
+        die "sudo needs a password but there is no terminal to ask on. Authenticate first (sudo -v) in a real terminal, then re-run."
+    fi
+    warn "sudo authentication required for the package step ..."
+    sudo -v || die "sudo authentication failed."
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -179,7 +181,47 @@ fi
 # ---------------------------------------------------------------------------
 # 5. Dependencies (+ gum bootstrap for the rest of this run).
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# NixOS: no system packages (the flake provides the whole toolchain).
+# Instead: require nix itself, flakes enabled, and a git to fetch with.
+# ---------------------------------------------------------------------------
+ensure_nix() {
+    command -v nix >/dev/null 2>&1 || die "Nix is not installed. Install it first: bash <(curl -s https://install.determinate.systems/nix) -- then re-run this script."
+    if ! nix show-config 2>/dev/null | grep -e experimental-features | grep -q -e flake; then
+        log "Nix flakes are not enabled."
+        if [ "$ASSUME_YES" -eq 1 ] || confirm "Enable flakes in ~/.config/nix/nix.conf?"; then
+            mkdir -p "$HOME/.config/nix"
+            touch "$HOME/.config/nix/nix.conf"
+            grep -q -e nix-command "$HOME/.config/nix/nix.conf" 2>/dev/null \
+                || echo "experimental-features = nix-command flakes" >> "$HOME/.config/nix/nix.conf"
+            log "flakes enabled; continuing."
+        else
+            die "flakes are required for the NixOS path."
+        fi
+    fi
+    if ! command -v git >/dev/null 2>&1; then
+        if [ "$ASSUME_YES" -eq 1 ] || confirm "Install git into your nix profile?"; then
+            run_step "installing git" nix profile install nixpkgs#git
+        else
+            die "git is required to fetch tilewm."
+        fi
+    fi
+    if ! command -v gum >/dev/null 2>&1; then
+        if [ "$ASSUME_YES" -eq 1 ] || confirm "Install gum (prettier menus) into your nix profile?"; then
+            run_step "installing gum" nix profile install nixpkgs#gum
+        else
+            log "continuing with plain prompts."
+        fi
+    fi
+    command -v gum >/dev/null 2>&1 && USE_GUM=1
+    log "Nix toolchain ready; build dependencies come from flake.nix."
+}
+
 install_deps() {
+    if [ "$DISTRO" = "nixos" ]; then
+        ensure_nix
+        return 0
+    fi
     overlay="packages-$DISTRO"
     [ -f "$SCRIPT_DIR/setup/$overlay" ] \
         || die "missing package manifest setup/$overlay (broken checkout?)."
@@ -225,6 +267,14 @@ fetch_source() {
 # 7. Build + test.
 # ---------------------------------------------------------------------------
 build_all() {
+    if [ "$DISTRO" = "nixos" ]; then
+        [ -f "$DEST/flake.nix" ] \
+            || die "$DEST has no flake.nix (use a checkout that includes it)."
+        log "building with nix (tests run as part of the build) ..."
+        (cd "$DEST" && nix build)
+        log "artifact: $DEST/result/bin/tilewm"
+        return 0
+    fi
     log "configuring + building in $DEST ..."
     cmake -S "$DEST" -B "$DEST/build" -G Ninja
     cmake --build "$DEST/build"
@@ -276,6 +326,22 @@ esac
 # 10. What-now card.
 # ---------------------------------------------------------------------------
 if [ "$MODE" = "all" ] || [ "$MODE" = "build" ]; then
+    if [ "$DISTRO" = "nixos" ]; then
+        cat <<EOF
+
+tilewm is ready: $DEST/result/bin/tilewm
+  Develop: nix develop            (shell with every build dependency)
+  Rebuild: nix build              (tests run as part of the build)
+  Config:  ~/.config/tilewm/init.lua   (Alt+Shift+R reloads it live)
+
+Keybindings: Alt+Return terminal | Alt+J/K focus | Alt+Space float |
+  Alt+1..4 workspaces | Alt+Shift+1..4 move | Alt+Q close | Alt+Shift+E quit
+
+Notes: launch from a TTY (Ctrl+Alt+F3) so the DRM backend is picked; a
+normal TTY login provides the needed session permissions. This NixOS
+path is young - please report what breaks.
+EOF
+    else
     BIN="$DEST/build/tilewm"
     cat <<EOF
 
@@ -293,6 +359,7 @@ is picked; a normal TTY login provides the needed session permissions.
 Under WSLg, keep clients inside the tilewm window and give it a virtual
 desktop (Win+Tab) for a contained feel.
 EOF
+    fi
 fi
 
 log "done."

@@ -4,10 +4,11 @@ Built and tested on Fedora 44 under WSL2 / WSLg, but it should run on any
 Linux with wlroots 0.20: nested under another Wayland/X11 session for
 development, or on DRM/KMS on real hardware.
 
-Supported distros: **Arch Linux and Fedora only, for now.** The installer
-and the dependency lists below cover exactly these two; anything else is
-unverified. No AUR or COPR packages are needed anywhere — every
-dependency comes from the official repositories.
+Supported distros: **Arch Linux, Fedora and NixOS.** The installer and
+the dependency lists cover exactly these three; anything else is
+unverified. On Arch and Fedora every dependency comes from the official
+repositories (no AUR, no COPR); on NixOS the flake provides the whole
+toolchain, so no system packages are needed at all.
 
 ## Install (recommended)
 
@@ -25,6 +26,13 @@ git clone https://github.com/Peter5235252/tilewm.git
 cd tilewm
 ./install.sh
 ```
+
+On NixOS, everything above works too, with two differences: you need Nix
+itself with flakes enabled first (the scripts tell you exactly what to
+run if either is missing), and nothing touches system packages — `nix
+build` produces `./result/bin/tilewm`, while `nix develop` drops you into
+a shell with every build dependency. The `nixos-support` branch is where
+this path is being hardened; a NixOS module is future work.
 
 The script detects Arch vs Fedora, installs system packages (sudo is used
 only for that step — never run the script itself as root), clones or
