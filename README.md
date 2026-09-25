@@ -12,8 +12,8 @@ toolchain, so no system packages are needed at all.
 
 ## Install (recommended)
 
-From a bare machine, one line (Arch or Fedora) — detects your distro,
-installs git, clones, and hands off to the installer:
+From a bare machine, one line (Arch, Fedora or NixOS) — detects your
+distro, installs git, clones, and hands off to the installer:
 
 ```
 bash <(curl -s https://raw.githubusercontent.com/Peter5235252/tilewm/main/setup.sh)
@@ -29,20 +29,24 @@ cd tilewm
 
 On NixOS, everything above works too, with two differences: you need Nix
 itself with flakes enabled first (the scripts tell you exactly what to
-run if either is missing), and nothing touches system packages — `nix
-build` produces `./result/bin/tilewm`, while `nix develop` drops you into
-a shell with every build dependency. The `nixos-support` branch is where
-this path is being hardened; a NixOS module is future work.
+run if either is missing — on a fresh machine that means installing Nix,
+then re-running the one-liner), and nothing touches system packages:
+`nix build` produces `./result/bin/tilewm`, while `nix develop` drops
+you into a shell with every build dependency. NixOS support lives on
+main and is verified by CI-style `nix build` runs; a NixOS module is
+future work.
 
-The script detects Arch vs Fedora, installs system packages (sudo is used
-only for that step — never run the script itself as root), clones or
-updates the source, builds, runs the test suite, and installs the example
-`init.lua`, `foot.ini` and wallpaper into `~/.config` (existing files are
-backed up, never silently overwritten). It uses `gum` menus when available
-and plain prompts otherwise. Useful flags: `--yes` (non-interactive),
-`--no-config` (leave `~/.config` alone), `--source DIR` (use an existing
-checkout), `--prefix DIR` (clone location), `--testmode` (full dry run
-with HOME redirected to a temp dir).
+The script detects Arch vs Fedora vs NixOS, installs system packages on
+Arch/Fedora (sudo is used only for that step — never run the script
+itself as root; NixOS needs no system packages since the flake provides
+the toolchain), clones or updates the source, builds, runs the test
+suite, and installs the example `init.lua`, `foot.ini` and wallpaper
+into `~/.config` (existing files are backed up, never silently
+overwritten). It uses `gum` menus when available and plain prompts
+otherwise. Useful flags: `--yes` (non-interactive), `--no-config`
+(leave `~/.config` alone), `--source DIR` (use an existing checkout),
+`--prefix DIR` (clone location), `--testmode` (full dry run with HOME
+redirected to a temp dir).
 
 Prefer doing it by hand? The exact package sets are listed below, then the
 same `cmake` build as everywhere.
