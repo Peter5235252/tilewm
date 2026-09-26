@@ -395,7 +395,9 @@ fetch_source() {
                 || die "could not clone $REPO_URL. Check network/proxy, antivirus, disk space, git version; then re-run."
         fi
     fi
-    verify_checkout
+    # NOTE: verify_checkout runs in the MAIN shell (see run flow below),
+    # never in here: this function's stdout is captured into DEST, so any
+    # DEST reassignment made in here would evaporate with the subshell.
     printf '%s\n' "$DEST"
 }
 
@@ -450,11 +452,12 @@ deploy_configs() {
 DEST=""
 case "$MODE" in
     deps)   install_deps ;;
-    build)  DEST="$(fetch_source)"; build_all ;;
-    config) DEST="$(fetch_source)"; [ "$DO_CONFIG" -eq 1 ] && deploy_configs ;;
+    build)  DEST="$(fetch_source)"; verify_checkout; build_all ;;
+    config) DEST="$(fetch_source)"; verify_checkout; [ "$DO_CONFIG" -eq 1 ] && deploy_configs ;;
     all)
         install_deps
         DEST="$(fetch_source)"
+        verify_checkout
         build_all
         [ "$DO_CONFIG" -eq 1 ] && deploy_configs
         ;;
