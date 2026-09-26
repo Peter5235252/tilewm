@@ -4,6 +4,17 @@ Built and tested on Fedora 44 under WSL2 / WSLg, but it should run on any
 Linux with wlroots 0.20: nested under another Wayland/X11 session for
 development, or on DRM/KMS on real hardware.
 
+## Status
+
+Working: scene rendering, wallpaper backgrounds, master-stack tiling,
+workspaces, floating toggle, Lua config with hot-reload, nested backends
+under WSLg, installer for Arch/Fedora/NixOS.
+
+In progress: on NixOS (ThinkPad T480) tilewm boots to the wallpaper on
+bare metal, but keyboard input does not reach it yet, so keybindings,
+spawning terminals, and tiling cannot be exercised there. Under WSLg
+everything works. Tracking down the input path is the current focus.
+
 Supported distros: **Arch Linux, Fedora and NixOS.** The installer and
 the dependency lists cover exactly these three; anything else is
 unverified. On Arch and Fedora every dependency comes from the official
