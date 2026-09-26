@@ -10,7 +10,7 @@ extern "C" {
 #include <png.h>
 }
 
-namespace tilewm {
+namespace aquawm {
 namespace {
 
 bool read_file(const char *path, std::vector<uint8_t> &data, std::string &error) {
@@ -130,4 +130,4 @@ bool decode_image(const char *path, std::vector<uint8_t> &rgba, int &width,
     return false;
 }
 
-} // namespace tilewm
+} // namespace aquawm

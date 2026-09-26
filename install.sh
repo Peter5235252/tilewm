@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tilewm installer: Arch Linux and Fedora only (for now).
+# aquawm installer: Arch Linux and Fedora only (for now).
 #
 #   ./install.sh [--yes] [--no-config] [--prefix DIR] [--source DIR] [--testmode]
 #
@@ -7,7 +7,7 @@
 #   1. Refuses to run as root (sudo is used only for the package step).
 #   2. Detects Arch vs Fedora via /etc/os-release and installs every
 #      dependency from official repositories (no AUR, no COPR).
-#   3. Clones (or fast-forward updates) tilewm, configures, builds, tests.
+#   3. Clones (or fast-forward updates) aquawm, configures, builds, tests.
 #   4. Installs example init.lua, foot.ini and wallpaper into ~/.config,
 #      backing up anything already there.
 #   5. Prints a tailored "what now" card (bare metal vs WSLg).
@@ -33,7 +33,7 @@ Usage: ./install.sh [--yes] [--no-config] [--prefix DIR] [--source DIR] [--testm
 
   --yes         answer yes to every prompt (automation friendly)
   --no-config   skip installing example configs into ~/.config
-  --prefix DIR  clone tilewm into DIR instead of \$HOME
+  --prefix DIR  clone aquawm into DIR instead of \$HOME
   --source DIR  use an existing checkout at DIR instead of cloning
   --testmode    full run with HOME redirected to a temp dir (safe dry run;
                 system packages still install normally)
@@ -46,7 +46,7 @@ while [ $# -gt 0 ]; do
         --no-config) DO_CONFIG=0 ;;
         --testmode)
             TESTMODE=1
-            PREFIX="$(mktemp -d /tmp/tilewm-test-XXXXXX)"
+            PREFIX="$(mktemp -d /tmp/aquawm-test-XXXXXX)"
             export HOME="$PREFIX"
             ;;
         --prefix) PREFIX="${2:?--prefix needs a directory}"; shift ;;
@@ -85,7 +85,7 @@ if [ -r /etc/os-release ]; then
         *nixos*) DISTRO="nixos" ;;
     esac
 fi
-[ -n "$DISTRO" ] || die "unsupported distro (ID=${ID:-unknown}): tilewm supports Arch Linux, Fedora and NixOS only, for now."
+[ -n "$DISTRO" ] || die "unsupported distro (ID=${ID:-unknown}): aquawm supports Arch Linux, Fedora and NixOS only, for now."
 
 # Fail fast when sudo would need a password we cannot provide: a hanging
 # password prompt with no terminal looks exactly like a frozen installer.
@@ -237,7 +237,7 @@ ensure_nix() {
         if [ "$ASSUME_YES" -eq 1 ] || confirm "Install git into your nix profile?"; then
             run_step "installing git" nix profile install nixpkgs#git
         else
-            die "git is required to fetch tilewm."
+            die "git is required to fetch aquawm."
         fi
     fi
     if ! command -v gum >/dev/null 2>&1; then
@@ -277,7 +277,7 @@ install_deps() {
 }
 
 # ---------------------------------------------------------------------------
-# 6. Checkout verification: confirm DEST actually looks like tilewm before
+# 6. Checkout verification: confirm DEST actually looks like aquawm before
 #    anything builds from it. This step never writes into the checkout:
 #    a broken tree offers update, fresh clone, or quit instead.
 # ---------------------------------------------------------------------------
@@ -318,7 +318,7 @@ clone_repo() {
 verify_checkout() {
     missing="$(checkout_problems)"
     [ -z "$missing" ] && return 0
-    warn "$DEST does not look like a tilewm checkout; missing:$missing"
+    warn "$DEST does not look like a aquawm checkout; missing:$missing"
     log "likely causes: an old revision from before a file existed, a partial download, or the wrong directory."
     if [ "$ASSUME_YES" -eq 1 ]; then
         die "cannot proceed automatically with a broken checkout. Fix $DEST by hand (or re-run without --yes to choose a repair)."
@@ -385,7 +385,7 @@ fetch_source() {
         [ -d "$SOURCE_DIR/.git" ] || die "--source $SOURCE_DIR is not a git checkout."
         DEST="$SOURCE_DIR"
     else
-        DEST="$PREFIX/tilewm"
+        DEST="$PREFIX/aquawm"
         if [ -d "$DEST/.git" ]; then
             log "updating existing checkout at $DEST ..."
             git -C "$DEST" pull --ff-only \
@@ -412,7 +412,7 @@ build_all() {
         command -v nix >/dev/null 2>&1 || die "nix is not available in this shell; open a login shell and re-run."
         log "building with nix (tests run as part of the build) ..."
         (cd "$DEST" && nix build)
-        log "artifact: $DEST/result/bin/tilewm"
+        log "artifact: $DEST/result/bin/aquawm"
         return 0
     fi
     log "configuring + building in $DEST ..."
@@ -441,9 +441,9 @@ install_file() {
 }
 
 deploy_configs() {
-    install_file "examples/init.lua" "$HOME/.config/tilewm/init.lua"
+    install_file "examples/init.lua" "$HOME/.config/aquawm/init.lua"
     install_file "examples/foot.ini" "$HOME/.config/foot/foot.ini"
-    install_file "assets/wallpaper.jpg" "$HOME/.config/tilewm/wallpaper.jpg"
+    install_file "assets/wallpaper.jpg" "$HOME/.config/aquawm/wallpaper.jpg"
 }
 
 # ---------------------------------------------------------------------------
@@ -470,10 +470,10 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "build" ]; then
     if [ "$DISTRO" = "nixos" ]; then
         cat <<EOF
 
-tilewm is ready: $DEST/result/bin/tilewm
+aquawm is ready: $DEST/result/bin/aquawm
   Develop: nix develop            (shell with every build dependency)
   Rebuild: nix build              (tests run as part of the build)
-  Config:  ~/.config/tilewm/init.lua   (Alt+Shift+R reloads it live)
+  Config:  ~/.config/aquawm/init.lua   (Alt+Shift+R reloads it live)
 
 Keybindings: Alt+Return terminal | Alt+J/K focus | Alt+Space float |
   Alt+1..4 workspaces | Alt+Shift+1..4 move | Alt+Q close | Alt+Shift+E quit
@@ -483,21 +483,21 @@ normal TTY login provides the needed session permissions. This NixOS
 path is young - please report what breaks.
 EOF
     else
-    BIN="$DEST/build/tilewm"
+    BIN="$DEST/build/aquawm"
     cat <<EOF
 
-tilewm is ready: $BIN
+aquawm is ready: $BIN
   Run it:  ./run-wslg.sh          (inside WSLg: X11 backend, maximize freely)
-           ./build/tilewm         (bare metal TTY or nested Wayland session)
+           ./build/aquawm         (bare metal TTY or nested Wayland session)
   Test:    WAYLAND_DISPLAY=wayland-N foot
-  Config:  ~/.config/tilewm/init.lua   (Alt+Shift+R reloads it live)
+  Config:  ~/.config/aquawm/init.lua   (Alt+Shift+R reloads it live)
 
 Keybindings: Alt+Return terminal | Alt+J/K focus | Alt+Space float |
   Alt+1..4 workspaces | Alt+Shift+1..4 move | Alt+Q close | Alt+Shift+E quit
 
 Notes: on bare metal, launch from a TTY (Ctrl+Alt+F3) so the DRM backend
 is picked; a normal TTY login provides the needed session permissions.
-Under WSLg, keep clients inside the tilewm window and give it a virtual
+Under WSLg, keep clients inside the aquawm window and give it a virtual
 desktop (Win+Tab) for a contained feel.
 EOF
     fi

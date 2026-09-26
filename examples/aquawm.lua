@@ -1,4 +1,4 @@
--- tilewm example config: copy to ~/.config/tilewm/init.lua and tweak.
+-- aquawm example config: copy to ~/.config/aquawm/aquawm.lua and tweak.
 -- Reload a running compositor with Alt+Shift+R (or SIGHUP).
 -- Key names follow xkb keysyms ("Return", "space", "q", "1" ...).
 -- Modifiers: Alt, Ctrl, Shift, Super (Logo/Win/Mod4 also work).
@@ -8,7 +8,7 @@ config = {
     mfact = 0.60,  -- master column width fraction (0.05 .. 0.95)
     nmaster = 1,   -- windows in the master column
     workspaces = 4 -- number of workspaces (1 .. 9)
-    -- wallpaper = os.getenv("HOME") .. "/.config/tilewm/wallpaper.jpg",
+    -- wallpaper = os.getenv("HOME") .. "/.config/aquawm/wallpaper.jpg",
 }
 
 bind("Alt", "Return", "spawn-terminal")

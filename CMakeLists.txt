@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(tilewm VERSION 0.1.0 LANGUAGES C CXX)
+project(aquawm VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,13 +20,13 @@ pkg_check_modules(JPEG REQUIRED libjpeg)
 pkg_check_modules(PNG REQUIRED libpng)
 pkg_check_modules(DRM REQUIRED libdrm)
 
-add_executable(tilewm
+add_executable(aquawm
   src/main.cpp
   src/config.cpp
   src/wallpaper.cpp
 )
 
-target_include_directories(tilewm PRIVATE
+target_include_directories(aquawm PRIVATE
   ${WLROOTS_INCLUDE_DIRS}
   ${WAYLAND_SERVER_INCLUDE_DIRS}
   ${XKBCOMMON_INCLUDE_DIRS}
@@ -37,7 +37,7 @@ target_include_directories(tilewm PRIVATE
   src
 )
 
-target_link_directories(tilewm PRIVATE
+target_link_directories(aquawm PRIVATE
   ${WLROOTS_LIBRARY_DIRS}
   ${WAYLAND_SERVER_LIBRARY_DIRS}
   ${XKBCOMMON_LIBRARY_DIRS}
@@ -47,7 +47,7 @@ target_link_directories(tilewm PRIVATE
   ${DRM_LIBRARY_DIRS}
 )
 
-target_link_libraries(tilewm PRIVATE
+target_link_libraries(aquawm PRIVATE
   ${WLROOTS_LIBRARIES}
   ${WAYLAND_SERVER_LIBRARIES}
   ${XKBCOMMON_LIBRARIES}
@@ -57,14 +57,14 @@ target_link_libraries(tilewm PRIVATE
   ${DRM_LIBRARIES}
 )
 
-target_compile_options(tilewm PRIVATE
+target_compile_options(aquawm PRIVATE
   -Wall -Wextra -Wpedantic
   ${WLROOTS_CFLAGS_OTHER}
   ${WAYLAND_SERVER_CFLAGS_OTHER}
 )
 
 # wlroots gates all of its headers behind this macro.
-target_compile_definitions(tilewm PRIVATE WLR_USE_UNSTABLE)
+target_compile_definitions(aquawm PRIVATE WLR_USE_UNSTABLE)
 
 # Pure-logic unit test for the tiling layout (no wlroots dependency).
 add_executable(test_tiling
@@ -119,4 +119,4 @@ target_compile_options(test_wallpaper PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME wallpaper COMMAND test_wallpaper)
 
 include(GNUInstallDirs)
-install(TARGETS tilewm RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS aquawm RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

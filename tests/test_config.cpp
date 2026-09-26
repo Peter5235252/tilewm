@@ -2,7 +2,10 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
+
+namespace fs = std::filesystem;
 
 static int failures = 0;
 
@@ -15,16 +18,16 @@ static int failures = 0;
     } while (0)
 
 int main() {
-    using tilewm::Config;
+    using aquawm::Config;
 
     // Compiled-in defaults mirror the original hardcoded behavior.
     {
-        Config c = tilewm::default_config();
+        Config c = aquawm::default_config();
         CHECK(c.gaps == 0);
         CHECK(c.mfact > 0.54f && c.mfact < 0.56f);
         CHECK(c.nmaster == 1);
         CHECK(c.workspaces == 4);
-        CHECK(c.wallpaper.ends_with("tilewm/wallpaper.jpg"));
+        CHECK(c.wallpaper.ends_with("aquawm/wallpaper.jpg"));
         bool has_quit = false, has_ws = false;
         for (const auto &k : c.keys) {
             has_quit = has_quit || k.action == "quit";
@@ -33,46 +36,80 @@ int main() {
         CHECK(has_quit && has_ws);
     }
 
+    // Legacy fallback: old tilewm paths are honored when aquawm ones
+    // do not exist, so renaming never strands an existing setup.
+    {
+        const char *old_home = std::getenv("HOME");
+        fs::path sandbox = fs::temp_directory_path() / "aquawm-fallback-test";
+        fs::remove_all(sandbox);
+        fs::create_directories(sandbox / ".config" / "tilewm");
+        {
+            std::ofstream f(sandbox / ".config" / "tilewm" / "init.lua");
+            f << "config = { gaps = 5 }\n";
+        }
+        setenv("HOME", sandbox.c_str(), 1);
+        // Only the legacy file exists: it wins, with default wallpaper
+        // falling back to the legacy image if present.
+        CHECK(aquawm::resolve_config_path("") ==
+              (sandbox / ".config" / "tilewm" / "init.lua").string());
+        CHECK(aquawm::resolve_wallpaper_path("") ==
+              (sandbox / ".config" / "aquawm" / "wallpaper.jpg").string());
+        fs::create_directories(sandbox / ".config" / "aquawm");
+        {
+            std::ofstream f(sandbox / ".config" / "aquawm" / "aquawm.lua");
+            f << "config = { gaps = 7 }\n";
+        }
+        // New location wins once it exists.
+        CHECK(aquawm::resolve_config_path("") ==
+              (sandbox / ".config" / "aquawm" / "aquawm.lua").string());
+        // Explicit paths always win untouched.
+        CHECK(aquawm::resolve_config_path("/tmp/x.lua") == "/tmp/x.lua");
+        if (old_home != nullptr) {
+            setenv("HOME", old_home, 1);
+        }
+        fs::remove_all(sandbox);
+    }
+
     // Modifier parsing.
     {
         bool ok = false;
-        CHECK(tilewm::parse_mods("Alt+Shift", ok) ==
-              (tilewm::MOD_ALT | tilewm::MOD_SHIFT));
+        CHECK(aquawm::parse_mods("Alt+Shift", ok) ==
+              (aquawm::MOD_ALT | aquawm::MOD_SHIFT));
         CHECK(ok);
-        CHECK(tilewm::parse_mods("ctrl+alt", ok) ==
-              (tilewm::MOD_CTRL | tilewm::MOD_ALT));
+        CHECK(aquawm::parse_mods("ctrl+alt", ok) ==
+              (aquawm::MOD_CTRL | aquawm::MOD_ALT));
         CHECK(ok);
-        CHECK(tilewm::parse_mods("Super", ok) == tilewm::MOD_SUPER);
+        CHECK(aquawm::parse_mods("Super", ok) == aquawm::MOD_SUPER);
         CHECK(ok);
-        tilewm::parse_mods("Alt+Frobnicator", ok);
+        aquawm::parse_mods("Alt+Frobnicator", ok);
         CHECK(!ok);
     }
 
     // Actions.
-    CHECK(tilewm::known_action("reload-config"));
-    CHECK(!tilewm::known_action("make-coffee"));
+    CHECK(aquawm::known_action("reload-config"));
+    CHECK(!aquawm::known_action("make-coffee"));
 
     // Missing file is an error, config untouched.
     {
-        Config c = tilewm::default_config();
+        Config c = aquawm::default_config();
         std::string err;
-        CHECK(!tilewm::load_config_file("/nonexistent-tilewm-init.lua", c, err));
+        CHECK(!aquawm::load_config_file("/nonexistent-aquawm-init.lua", c, err));
         CHECK(!err.empty());
-        CHECK(c.gaps == 0 && c.keys.size() == tilewm::default_config().keys.size());
+        CHECK(c.gaps == 0 && c.keys.size() == aquawm::default_config().keys.size());
     }
 
     // A real file overrides values and replaces binds.
     {
-        const char *path = "/tmp/tilewm-test-init.lua";
+        const char *path = "/tmp/aquawm-test-init.lua";
         {
             std::ofstream f(path);
             f << "config = { gaps = 12, mfact = 0.7, nmaster = 2, workspaces = 2,\n"
                   "  wallpaper = \"/tmp/wall.jpg\" }\n"
                   "bind(\"Alt\", \"x\", \"close\")\n";
         }
-        Config c = tilewm::default_config();
+        Config c = aquawm::default_config();
         std::string err;
-        CHECK(tilewm::load_config_file(path, c, err));
+        CHECK(aquawm::load_config_file(path, c, err));
         CHECK(c.gaps == 12);
         CHECK(c.mfact > 0.69f && c.mfact < 0.71f);
         CHECK(c.nmaster == 2);
@@ -84,29 +121,29 @@ int main() {
 
     // A file with no binds keeps the previous keymap.
     {
-        const char *path = "/tmp/tilewm-test-init2.lua";
+        const char *path = "/tmp/aquawm-test-init2.lua";
         {
             std::ofstream f(path);
             f << "config = { gaps = 3 }\n";
         }
-        Config c = tilewm::default_config();
+        Config c = aquawm::default_config();
         const std::size_t nkeys = c.keys.size();
         std::string err;
-        CHECK(tilewm::load_config_file(path, c, err));
+        CHECK(aquawm::load_config_file(path, c, err));
         CHECK(c.gaps == 3 && c.keys.size() == nkeys);
         std::remove(path);
     }
 
     // Broken Lua and bad binds are errors.
     {
-        const char *path = "/tmp/tilewm-test-init3.lua";
+        const char *path = "/tmp/aquawm-test-init3.lua";
         {
             std::ofstream f(path);
             f << "bind(\"Alt\", \"not-a-real-key-xyz\", \"close\")\n";
         }
-        Config c = tilewm::default_config();
+        Config c = aquawm::default_config();
         std::string err;
-        CHECK(!tilewm::load_config_file(path, c, err));
+        CHECK(!aquawm::load_config_file(path, c, err));
         CHECK(!err.empty());
         std::remove(path);
     }

@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
-# tilewm one-line setup (ML4W style): detect distro, install git, clone
-# tilewm, hand off to install.sh. Run from anywhere, even a bare machine:
+# aquawm one-line setup (ML4W style): detect distro, install git, clone
+# aquawm, hand off to install.sh. Run from anywhere, even a bare machine:
 #
 #   bash <(curl -s https://raw.githubusercontent.com/Peter5235252/tilewm/main/setup.sh)
 #
 # Any arguments are forwarded to install.sh (try --yes for automation).
-# Honors TILEWM_DEST to override the checkout location (default ~/tilewm).
+# Honors AQUAWM_DEST to override the checkout location (default ~/aquawm).
 
 set -euo pipefail
 
 REPO_URL="https://github.com/Peter5235252/tilewm.git"
-DEST="${TILEWM_DEST:-$HOME/tilewm}"
+# AQUAWM_DEST overrides; TILEWM_DEST still honored once with a warning.
+if [ -n "${TILEWM_DEST:-}" ] && [ -z "${AQUAWM_DEST:-}" ]; then
+    echo "setup: note: TILEWM_DEST is deprecated, use AQUAWM_DEST." >&2
+fi
+DEST="${AQUAWM_DEST:-${TILEWM_DEST:-$HOME/aquawm}}"
 
 die() { printf 'setup: error: %s\n' "$*" >&2; exit 1; }
 
@@ -26,7 +30,7 @@ if [ -r /etc/os-release ]; then
         *nixos*) DISTRO="nixos" ;;
     esac
 fi
-[ -n "$DISTRO" ] || die "unsupported distro: tilewm supports Arch Linux, Fedora and NixOS only, for now."
+[ -n "$DISTRO" ] || die "unsupported distro: aquawm supports Arch Linux, Fedora and NixOS only, for now."
 
 # sudo is only needed for system packages (Arch/Fedora). NixOS installs
 # everything user-local via profiles, so skip it there entirely.

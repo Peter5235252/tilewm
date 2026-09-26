@@ -18,7 +18,7 @@ int main() {
         std::vector<uint8_t> rgba;
         int w = 0, h = 0;
         std::string err;
-        CHECK(tilewm::decode_image("../assets/wallpaper.jpg", rgba, w, h, err));
+        CHECK(aquawm::decode_image("../assets/wallpaper.jpg", rgba, w, h, err));
         CHECK(w > 1000 && h > 500);
         CHECK(rgba.size() == static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4);
         // Opaque JPEG: every alpha byte must be 0xFF.
@@ -37,9 +37,9 @@ int main() {
         std::vector<uint8_t> rgba;
         int w = 0, h = 0;
         std::string err;
-        CHECK(!tilewm::decode_image("/nonexistent.jpg", rgba, w, h, err));
+        CHECK(!aquawm::decode_image("/nonexistent.jpg", rgba, w, h, err));
         CHECK(!err.empty());
-        CHECK(!tilewm::decode_image("", rgba, w, h, err));
+        CHECK(!aquawm::decode_image("", rgba, w, h, err));
     }
 
     if (failures == 0) {

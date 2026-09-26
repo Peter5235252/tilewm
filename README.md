@@ -1,4 +1,4 @@
-# tilewm — a tiny tiling Wayland compositor in C++ (wlroots 0.20)
+# AquaWM — a tiny tiling Wayland compositor in C++ (wlroots 0.20)
 
 Built and tested on Fedora 44 under WSL2 / WSLg, but it should run on any
 Linux with wlroots 0.20: nested under another Wayland/X11 session for
@@ -10,7 +10,7 @@ Working: scene rendering, wallpaper backgrounds, master-stack tiling,
 workspaces, floating toggle, Lua config with hot-reload, nested backends
 under WSLg, installer for Arch/Fedora/NixOS.
 
-In progress: on NixOS (ThinkPad T480) tilewm boots to the wallpaper on
+In progress: on NixOS (ThinkPad T480) aquawm boots to the wallpaper on
 bare metal, but keyboard input does not reach it yet, so keybindings,
 spawning terminals, and tiling cannot be exercised there. Under WSLg
 everything works. Tracking down the input path is the current focus.
@@ -34,7 +34,7 @@ Or the classic way:
 
 ```
 git clone https://github.com/Peter5235252/tilewm.git
-cd tilewm
+cd aquawm
 ./install.sh
 ```
 
@@ -42,7 +42,7 @@ On NixOS, everything above works too, with two differences: you need Nix
 itself with flakes enabled first (the scripts tell you exactly what to
 run if either is missing — on a fresh machine that means installing Nix,
 then re-running the one-liner), and nothing touches system packages:
-`nix build` produces `./result/bin/tilewm`, while `nix develop` drops
+`nix build` produces `./result/bin/aquawm`, while `nix develop` drops
 you into a shell with every build dependency. My ThinkPad T480 runs
 NixOS, so I test this path on real hardware firsthand — if you try it
 elsewhere, reports are welcome. A NixOS module is future work.
@@ -69,7 +69,7 @@ wlroots 0.20.x — the same `wlroots-0.20.pc`, so no CMake changes):
 
 ```
 nix develop   # shell with every build dependency
-nix build     # ./result/bin/tilewm (tests run as part of the build)
+nix build     # ./result/bin/aquawm (tests run as part of the build)
 ```
 
 Status: builds green via `nix build` (test suite runs inside the build).
@@ -103,7 +103,7 @@ sudo pacman -S base-devel cmake ninja pkgconf git \
 
 ## Run on real hardware
 
-Log out to a TTY (e.g. `Ctrl+Alt+F3`), log in, and run `./build/tilewm`
+Log out to a TTY (e.g. `Ctrl+Alt+F3`), log in, and run `./build/aquawm`
 from there so backend autocreate picks DRM/KMS (with real GLES2/Vulkan
 rendering instead of the nested pixman fallback). A normal TTY login
 gives you the logind session compositors need for input and DRM access;
@@ -117,8 +117,8 @@ existing Wayland/X11 session works exactly like under WSLg.
    another TTY is fine.
 2. From your checkout, run `./run-tty.sh`. It unsets `WAYLAND_DISPLAY`
    (so backend autocreate takes the display instead of nesting into
-   another session) and starts `./result/bin/tilewm`, falling back to
-   `./build/tilewm` for non-Nix builds.
+   another session) and starts `./result/bin/aquawm`, falling back to
+   `./build/aquawm` for non-Nix builds.
 3. Checklist, in the order things usually bite:
    - `foot` installed (`nix profile install nixpkgs#foot`) — without it,
      `Alt+Return` silently does nothing and the desktop looks dead.
@@ -126,10 +126,10 @@ existing Wayland/X11 session works exactly like under WSLg.
      `loginctl` if input or DRM permission is denied.
    - Intel iGPU primary — if you can see the login prompt, modesetting
      already works.
-   - `~/.config/tilewm/init.lua` present — the installer deploys the
+   - `~/.config/aquawm/init.lua` present — the installer deploys the
      example; without it you get built-in defaults.
 4. Quit with `Alt+Shift+E`. If the screen ever locks up, `Ctrl+Alt+F1/F2`
-   jumps back to your other session; tilewm releases the display on
+   jumps back to your other session; aquawm releases the display on
    VT switch.
 
 ## Build
@@ -153,11 +153,11 @@ This forces the **X11 backend**, which is currently the durable choice under
 WSLg: maximizing a wlroots **Wayland**-backend window makes the host send a
 maximized configure the backend cannot satisfy, and the host disconnects us
 with an `xdg_wm_base` protocol error. The X11 backend survives maximize and
-arbitrary resizes. On real hardware or other sessions, run `./build/tilewm`
+arbitrary resizes. On real hardware or other sessions, run `./build/aquawm`
 directly so backend autocreate can pick Wayland or DRM.
 
  tips:
-- Maximize the tilewm window (`Win+Up`) and open clients *inside* it with
+- Maximize the aquawm window (`Win+Up`) and open clients *inside* it with
   `Alt+Return`; host-side terminals stay outside and only add clutter.
 - Optionally move it to its own Windows virtual desktop (`Win+Tab` -> New
   desktop, drag it over, `Win+Ctrl+Left/Right` to flip).
@@ -188,23 +188,23 @@ WAYLAND_DISPLAY=wayland-1 foot
 Settings and keybindings live in Lua, not in C++:
 
 ```
-mkdir -p ~/.config/tilewm
-cp examples/init.lua ~/.config/tilewm/init.lua
-$EDITOR ~/.config/tilewm/init.lua
+mkdir -p ~/.config/aquawm
+cp examples/init.lua ~/.config/aquawm/init.lua
+$EDITOR ~/.config/aquawm/init.lua
 ```
 
 The file sets `config = { gaps, mfact, nmaster, workspaces }` and
 registers keys with `bind("Alt+Shift", "e", "quit")` (modifiers Alt, Ctrl,
 Shift, Super; key names are xkb keysyms; workspace actions take a 1-based
-number). Apply changes with `Alt+Shift+R`, with `kill -HUP <tilewm-pid>`,
-or by restarting. A custom path works too: `tilewm /path/to/init.lua`.
+number). Apply changes with `Alt+Shift+R`, with `kill -HUP <aquawm-pid>`,
+or by restarting. A custom path works too: `aquawm /path/to/init.lua`.
 Missing or broken files fall back to built-in defaults with a log line.
 
 ## Wallpaper
 
 `config = { wallpaper = "/path/to/image.jpg" }` (PNG or JPEG) sets the
 background, cover-fit per output behind all windows; empty means
-`~/.config/tilewm/wallpaper.jpg`. Changing it and reloading (`Alt+Shift+R`
+`~/.config/aquawm/wallpaper.jpg`. Changing it and reloading (`Alt+Shift+R`
 or `SIGHUP`) swaps it live. The shipped `assets/wallpaper.jpg` is the
 default - copy it next to your `init.lua`.
 
@@ -233,7 +233,7 @@ cp examples/foot.ini ~/.config/foot/foot.ini
 
 ## Distro support, now and later
 
-tilewm supports **Arch Linux and Fedora**, where every dependency comes
+aquawm supports **Arch Linux and Fedora**, where every dependency comes
 from the official repositories (no AUR, no COPR), and **NixOS, which is
 supported but very alpha-stage**: it installs and builds through the
 flake today, gets tested on real hardware firsthand, and still has rough

@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 
-using tilewm::Box;
+using aquawm::Box;
 
 static int failures = 0;
 
@@ -21,19 +21,19 @@ static int area_of(Box b) {
 
 int main() {
     // Empty / degenerate inputs produce no boxes.
-    CHECK(tilewm::master_stack(0, Box{0, 0, 800, 600}).empty());
-    CHECK(tilewm::master_stack(3, Box{0, 0, 0, 600}).empty());
+    CHECK(aquawm::master_stack(0, Box{0, 0, 800, 600}).empty());
+    CHECK(aquawm::master_stack(3, Box{0, 0, 0, 600}).empty());
 
     // A single window always takes the whole area.
     {
-        auto v = tilewm::master_stack(1, Box{0, 0, 800, 600});
+        auto v = aquawm::master_stack(1, Box{0, 0, 800, 600});
         CHECK(v.size() == 1);
         CHECK(v[0].x == 0 && v[0].y == 0 && v[0].w == 800 && v[0].h == 600);
     }
 
     // Three windows: 1 master + 2 stack, default mfact 0.55.
     {
-        auto v = tilewm::master_stack(3, Box{0, 0, 1000, 800});
+        auto v = aquawm::master_stack(3, Box{0, 0, 1000, 800});
         CHECK(v.size() == 3);
         // Master takes the full height on the left.
         CHECK(v[0].x == 0 && v[0].y == 0 && v[0].w == 550 && v[0].h == 800);
@@ -46,7 +46,7 @@ int main() {
 
     // Offset areas are respected.
     {
-        auto v = tilewm::master_stack(2, Box{100, 50, 800, 600}, 1, 0.5f);
+        auto v = aquawm::master_stack(2, Box{100, 50, 800, 600}, 1, 0.5f);
         CHECK(v.size() == 2);
         CHECK(v[0].x == 100 && v[0].y == 50 && v[0].w == 400 && v[0].h == 600);
         CHECK(v[1].x == 500 && v[1].y == 50 && v[1].w == 400 && v[1].h == 600);

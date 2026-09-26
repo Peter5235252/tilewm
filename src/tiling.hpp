@@ -1,6 +1,6 @@
 #pragma once
 
-// Pure tiling geometry for tilewm: no wlroots types here on purpose,
+// Pure tiling geometry for aquawm: no wlroots types here on purpose,
 // so this header stays unit-testable on any machine.
 //
 // master-stack layout: the first `nmaster` windows share the left
@@ -10,7 +10,7 @@
 
 #include <vector>
 
-namespace tilewm {
+namespace aquawm {
 
 struct Box {
     int x = 0;
@@ -67,4 +67,4 @@ inline std::vector<Box> master_stack(int count, Box area, int nmaster = 1, float
     return out;
 }
 
-} // namespace tilewm
+} // namespace aquawm

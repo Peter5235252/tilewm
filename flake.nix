@@ -1,7 +1,7 @@
-# tilewm on NixOS (experimental branch): reproducible dev shell + package.
+# aquawm on NixOS (experimental branch): reproducible dev shell + package.
 #
 #   nix develop          # drop into a shell with every build dependency
-#   nix build            # build ./result/bin/tilewm (+ run ./result tests)
+#   nix build            # build ./result/bin/aquawm (+ run ./result tests)
 #
 # Design notes:
 # - nixpkgs unstable is pinned via flake.lock, so the wlroots 0.20.x and
@@ -11,7 +11,7 @@
 #   Fedora/Arch, so CMakeLists.txt needs no Nix-specific changes.
 
 {
-  description = "tilewm: minimal tiling Wayland compositor in C++ (wlroots 0.20, Lua config)";
+  description = "aquawm: minimal tiling Wayland compositor in C++ (wlroots 0.20, Lua config)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -27,7 +27,7 @@
       forEachSystem = nixpkgs.lib.genAttrs systems;
       pkgsFor = system: import nixpkgs { inherit system; };
 
-      tilewmDeps = pkgs: [
+      aquawmDeps = pkgs: [
         pkgs.wlroots_0_20
         pkgs.wayland
         pkgs.wayland-protocols
@@ -42,7 +42,7 @@
         pkgs.libpng
       ];
 
-      tilewmSrc = {
+      aquawmSrc = {
         root = ./.;
         fileset = nixpkgs.lib.fileset.unions [
           ./CMakeLists.txt
@@ -61,9 +61,9 @@
         in
         {
           default = pkgs.stdenv.mkDerivation {
-            pname = "tilewm";
+            pname = "aquawm";
             version = "0.1.0";
-            src = nixpkgs.lib.fileset.toSource tilewmSrc;
+            src = nixpkgs.lib.fileset.toSource aquawmSrc;
 
             nativeBuildInputs = with pkgs; [
               cmake
@@ -71,7 +71,7 @@
               pkg-config
             ];
 
-            buildInputs = tilewmDeps pkgs;
+            buildInputs = aquawmDeps pkgs;
 
             # The test suite decodes the shipped asset; keep it enabled so
             # `nix build` fails rather than shipping an untested binary.
@@ -99,7 +99,7 @@
               gdb
             ];
             shellHook = ''
-              echo "tilewm dev shell: cmake -S . -B build -G Ninja && cmake --build build && ctest --test-dir build"
+              echo "aquawm dev shell: cmake -S . -B build -G Ninja && cmake --build build && ctest --test-dir build"
             '';
           };
         }

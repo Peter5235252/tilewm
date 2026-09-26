@@ -1,4 +1,4 @@
-// tilewm Lua config bridge: loads an init.lua file into a Config.
+// aquawm Lua config bridge: loads an init.lua file into a Config.
 //
 // Config language (see examples/init.lua):
 //
@@ -24,10 +24,11 @@
 
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
 #include <lua.hpp>
 #include <xkbcommon/xkbcommon.h>
 
-namespace tilewm {
+namespace aquawm {
 namespace {
 
 bool iequals(const std::string &a, const char *b) {
@@ -177,13 +178,57 @@ Config default_config() {
 std::string default_config_path() {
     const char *home = std::getenv("HOME");
     std::string base = (home != nullptr && home[0] != '\0') ? home : "/tmp";
-    return base + "/.config/tilewm/init.lua";
+    return base + "/.config/aquawm/aquawm.lua";
 }
 
 std::string default_wallpaper_path() {
     const char *home = std::getenv("HOME");
     std::string base = (home != nullptr && home[0] != '\0') ? home : "/tmp";
+    return base + "/.config/aquawm/wallpaper.jpg";
+}
+
+std::string legacy_config_path() {
+    const char *home = std::getenv("HOME");
+    std::string base = (home != nullptr && home[0] != '\0') ? home : "/tmp";
+    return base + "/.config/tilewm/init.lua";
+}
+
+std::string legacy_wallpaper_path() {
+    const char *home = std::getenv("HOME");
+    std::string base = (home != nullptr && home[0] != '\0') ? home : "/tmp";
     return base + "/.config/tilewm/wallpaper.jpg";
+}
+
+std::string resolve_config_path(const std::string &explicit_path) {
+    namespace fs = std::filesystem;
+    if (!explicit_path.empty()) {
+        return explicit_path;
+    }
+    std::string preferred = default_config_path();
+    if (fs::exists(preferred)) {
+        return preferred;
+    }
+    std::string legacy = legacy_config_path();
+    if (fs::exists(legacy)) {
+        return legacy;
+    }
+    return preferred;
+}
+
+std::string resolve_wallpaper_path(const std::string &configured) {
+    namespace fs = std::filesystem;
+    if (!configured.empty()) {
+        return configured;
+    }
+    std::string preferred = default_wallpaper_path();
+    if (fs::exists(preferred)) {
+        return preferred;
+    }
+    std::string legacy = legacy_wallpaper_path();
+    if (fs::exists(legacy)) {
+        return legacy;
+    }
+    return preferred;
 }
 
 bool load_config_file(const char *path, Config &out, std::string &error) {
@@ -256,4 +301,4 @@ bool load_config_file(const char *path, Config &out, std::string &error) {
     return true;
 }
 
-} // namespace tilewm
+} // namespace aquawm

@@ -1,6 +1,6 @@
 #pragma once
 
-// tilewm configuration model: plain C++ values, no Lua types here, so this
+// aquawm configuration model: plain C++ values, no Lua types here, so this
 // header stays includable and unit-testable anywhere. config.cpp bridges
 // these to an init.lua file; main.cpp consumes them.
 
@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace tilewm {
+namespace aquawm {
 
 // Modifier bits for Keybind::mods (mapped to WLR_MODIFIER_* by main.cpp).
 constexpr uint32_t MOD_SHIFT = 1u << 0;
@@ -46,12 +46,26 @@ bool known_action(const std::string &action);
 // error on any failure; out is left at its incoming value on failure.
 bool load_config_file(const char *path, Config &out, std::string &error);
 
-// $HOME/.config/tilewm/init.lua (falls back to /root/... for UID 0, which
+// $HOME/.config/aquawm/aquawm.lua (falls back to /root/... for UID 0, which
 // is why the compositor should run as a normal user).
 std::string default_config_path();
+
+// The pre-rename location, honored once with a warning when the new one
+// does not exist, so existing setups keep working after the rename.
+std::string legacy_config_path();
 
 // Default wallpaper location next to the config file. An empty wallpaper
 // field in Config resolves to this.
 std::string default_wallpaper_path();
 
-} // namespace tilewm
+// Resolve which config file to load: explicit path wins, otherwise the
+// default, otherwise the legacy location. Never fails; missing files are
+// reported by load_config_file with built-in defaults as fallback.
+std::string resolve_config_path(const std::string &explicit_path);
+
+// Resolve the wallpaper image: explicit setting wins, otherwise the
+// default, otherwise the legacy location. May point at a missing file;
+// the caller logs and degrades gracefully in that case.
+std::string resolve_wallpaper_path(const std::string &configured);
+
+} // namespace aquawm

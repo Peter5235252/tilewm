@@ -1,6 +1,6 @@
-// tilewm - Phase 3a: Lua-configured master-stack tiling compositor.
+// aquawm - Phase 3a: Lua-configured master-stack tiling compositor.
 // Settings (gaps, mfact, nmaster, workspaces) and all keybindings come from
-// ~/.config/tilewm/init.lua (see examples/init.lua), reloadable via
+// ~/.config/aquawm/init.lua (see examples/init.lua), reloadable via
 // Alt+Shift+R or SIGHUP; built-in defaults apply when missing or broken.
 // Pointer: click focuses, Alt+Left-drag moves (floating tiled windows
 // first), Alt+Right-drag resizes, with a default xcursor otherwise.
@@ -169,7 +169,7 @@ struct Server {
     std::vector<View *> views;
 
     int active_workspace = 0;
-    tilewm::Config config;
+    aquawm::Config config;
     std::string config_path;
     Wallpaper wallpaper;
 
@@ -227,8 +227,8 @@ void arrange(Server *server) {
             tiled.push_back(v);
         }
     }
-    auto boxes = tilewm::master_stack(static_cast<int>(tiled.size()),
-        tilewm::Box{area.x, area.y, area.width, area.height},
+    auto boxes = aquawm::master_stack(static_cast<int>(tiled.size()),
+        aquawm::Box{area.x, area.y, area.width, area.height},
         server->config.nmaster, server->config.mfact);
     for (std::size_t i = 0; i < tiled.size(); ++i) {
         View *v = tiled[i];
@@ -430,16 +430,16 @@ View *focused_view(Server *server) {
 uint32_t wlr_to_tile_mods(uint32_t wlr_mods) {
     uint32_t mods = 0;
     if (wlr_mods & WLR_MODIFIER_SHIFT) {
-        mods |= tilewm::MOD_SHIFT;
+        mods |= aquawm::MOD_SHIFT;
     }
     if (wlr_mods & WLR_MODIFIER_CTRL) {
-        mods |= tilewm::MOD_CTRL;
+        mods |= aquawm::MOD_CTRL;
     }
     if (wlr_mods & WLR_MODIFIER_ALT) {
-        mods |= tilewm::MOD_ALT;
+        mods |= aquawm::MOD_ALT;
     }
     if (wlr_mods & WLR_MODIFIER_LOGO) {
-        mods |= tilewm::MOD_SUPER;
+        mods |= aquawm::MOD_SUPER;
     }
     return mods;
 }
@@ -447,9 +447,9 @@ uint32_t wlr_to_tile_mods(uint32_t wlr_mods) {
 // Re-read the config file and apply it: fix up workspace assignments,
 // refresh visibility, re-tile, refocus. Keeps the old config on failure.
 bool reload_config(Server *server) {
-    tilewm::Config next = server->config;
+    aquawm::Config next = server->config;
     std::string error;
-    if (!tilewm::load_config_file(server->config_path.c_str(), next, error)) {
+    if (!aquawm::load_config_file(server->config_path.c_str(), next, error)) {
         wlr_log(WLR_ERROR, "config reload failed (%s): %s",
             server->config_path.c_str(), error.c_str());
         return false;
@@ -477,7 +477,7 @@ bool reload_config(Server *server) {
     return true;
 }
 
-void run_action(Server *server, const tilewm::Keybind &bind) {
+void run_action(Server *server, const aquawm::Keybind &bind) {
     const std::string &a = bind.action;
     if (a == "spawn-terminal") {
         spawn_terminal();
@@ -519,7 +519,7 @@ void run_action(Server *server, const tilewm::Keybind &bind) {
 
 bool handle_keybinding(Server *server, xkb_keysym_t sym, uint32_t modifiers) {
     const uint32_t mods = wlr_to_tile_mods(modifiers);
-    for (const tilewm::Keybind &bind : server->config.keys) {
+    for (const aquawm::Keybind &bind : server->config.keys) {
         if (bind.mods == mods && bind.keysym == sym) {
             run_action(server, bind);
             return true;
@@ -785,9 +785,7 @@ bool upload_wallpaper(Server *server) {
     if (server->wallpaper.buffer != nullptr) {
         return true;
     }
-    std::string path = server->config.wallpaper.empty()
-        ? tilewm::default_wallpaper_path()
-        : server->config.wallpaper;
+    std::string path = aquawm::resolve_wallpaper_path(server->config.wallpaper);
     if (path == server->wallpaper.tried_path) {
         return false;
     }
@@ -796,7 +794,7 @@ bool upload_wallpaper(Server *server) {
     std::vector<uint8_t> rgba;
     int iw = 0, ih = 0;
     std::string error;
-    if (!tilewm::decode_image(path.c_str(), rgba, iw, ih, error)) {
+    if (!aquawm::decode_image(path.c_str(), rgba, iw, ih, error)) {
         wlr_log(WLR_ERROR, "wallpaper: %s", error.c_str());
         return false;
     }
@@ -948,8 +946,8 @@ void on_new_output(struct wl_listener *listener, void *data) {
     // metadata. Without a title/app_id, WSLg's RAIL shell only gets a bare
     // entry that shows on the taskbar but won't restore or focus properly.
     if (wlr_output_is_wl(wlr_output)) {
-        wlr_wl_output_set_title(wlr_output, "tilewm");
-        wlr_wl_output_set_app_id(wlr_output, "tilewm");
+        wlr_wl_output_set_title(wlr_output, "aquawm");
+        wlr_wl_output_set_app_id(wlr_output, "aquawm");
     }
 
     struct wlr_output_state state;
@@ -986,12 +984,18 @@ int main(int argc, char **argv) {
     wlr_log_init(WLR_DEBUG, nullptr);
 
     Server server{};
-    server.config = tilewm::default_config();
-    server.config_path =
-        argc > 1 ? argv[1] : tilewm::default_config_path();
+    server.config = aquawm::default_config();
+    std::string explicit_path = argc > 1 ? argv[1] : "";
+    server.config_path = aquawm::resolve_config_path(explicit_path);
+    if (explicit_path.empty() &&
+        server.config_path == aquawm::legacy_config_path()) {
+        wlr_log(WLR_INFO, "using legacy config %s; move it to %s",
+            server.config_path.c_str(),
+            aquawm::default_config_path().c_str());
+    }
     {
         std::string error;
-        if (tilewm::load_config_file(server.config_path.c_str(), server.config,
+        if (aquawm::load_config_file(server.config_path.c_str(), server.config,
                 error)) {
             wlr_log(WLR_INFO, "loaded config %s", server.config_path.c_str());
         } else {
@@ -1013,23 +1017,23 @@ int main(int argc, char **argv) {
     wl_event_loop_add_signal(loop, SIGHUP, on_reload_signal, &server);
     server.backend = wlr_backend_autocreate(loop, &server.session);
     if (server.backend == nullptr) {
-        std::fprintf(stderr, "tilewm: failed to create backend\n");
+        std::fprintf(stderr, "aquawm: failed to create backend\n");
         return 1;
     }
 
     server.renderer = wlr_renderer_autocreate(server.backend);
     if (server.renderer == nullptr) {
-        std::fprintf(stderr, "tilewm: failed to create renderer\n");
+        std::fprintf(stderr, "aquawm: failed to create renderer\n");
         return 1;
     }
     if (!wlr_renderer_init_wl_display(server.renderer, server.display)) {
-        std::fprintf(stderr, "tilewm: failed to init renderer display\n");
+        std::fprintf(stderr, "aquawm: failed to init renderer display\n");
         return 1;
     }
 
     server.allocator = wlr_allocator_autocreate(server.backend, server.renderer);
     if (server.allocator == nullptr) {
-        std::fprintf(stderr, "tilewm: failed to create allocator\n");
+        std::fprintf(stderr, "aquawm: failed to create allocator\n");
         return 1;
     }
 
@@ -1081,13 +1085,13 @@ int main(int argc, char **argv) {
 
     server.socket = wl_display_add_socket_auto(server.display);
     if (server.socket == nullptr) {
-        std::fprintf(stderr, "tilewm: failed to create Wayland socket\n");
+        std::fprintf(stderr, "aquawm: failed to create Wayland socket\n");
         return 1;
     }
-    std::fprintf(stderr, "tilewm: running on WAYLAND_DISPLAY=%s\n", server.socket);
+    std::fprintf(stderr, "aquawm: running on WAYLAND_DISPLAY=%s\n", server.socket);
 
     if (!wlr_backend_start(server.backend)) {
-        std::fprintf(stderr, "tilewm: failed to start backend\n");
+        std::fprintf(stderr, "aquawm: failed to start backend\n");
         return 1;
     }
 
