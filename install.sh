@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-REPO_URL="https://github.com/Peter5235252/tilewm.git"
+REPO_URL="https://github.com/Peter5235252/AquaWM.git"
 ASSUME_YES=0
 DO_CONFIG=1
 PREFIX="$HOME"

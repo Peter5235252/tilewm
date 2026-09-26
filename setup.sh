@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO_URL="https://github.com/Peter5235252/tilewm.git"
+REPO_URL="https://github.com/Peter5235252/AquaWM.git"
 # AQUAWM_DEST overrides; TILEWM_DEST still honored once with a warning.
 if [ -n "${TILEWM_DEST:-}" ] && [ -z "${AQUAWM_DEST:-}" ]; then
     echo "setup: note: TILEWM_DEST is deprecated, use AQUAWM_DEST." >&2

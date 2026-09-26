@@ -33,7 +33,7 @@ bash <(curl -s https://raw.githubusercontent.com/Peter5235252/tilewm/main/setup.
 Or the classic way:
 
 ```
-git clone https://github.com/Peter5235252/tilewm.git
+git clone https://github.com/Peter5235252/AquaWM.git
 cd aquawm
 ./install.sh
 ```
