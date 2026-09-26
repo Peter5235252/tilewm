@@ -2,6 +2,8 @@
 // Settings (gaps, mfact, nmaster, workspaces) and all keybindings come from
 // ~/.config/tilewm/init.lua (see examples/init.lua), reloadable via
 // Alt+Shift+R or SIGHUP; built-in defaults apply when missing or broken.
+// Pointer: click focuses, Alt+Left-drag moves (floating tiled windows
+// first), Alt+Right-drag resizes, with a default xcursor otherwise.
 //
 // What works in this phase:
 //   * backend autocreate (nested Wayland/X11 window under WSLg, DRM on real hw)
@@ -17,6 +19,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <linux/input-event-codes.h>
 #include <unistd.h>
 #include <wayland-server-core.h>
 #include <xkbcommon/xkbcommon.h>
@@ -104,6 +107,14 @@ struct Keyboard {
     struct wl_listener destroy{};
 };
 
+// What the pointer is currently doing: passing events through, or
+// dragging a grabbed view.
+enum class CursorMode {
+    Passthrough,
+    Move,
+    Resize,
+};
+
 // Cursor event listeners; owned by the Server for its whole lifetime.
 struct CursorEvents {
     Server *server = nullptr;
@@ -136,6 +147,16 @@ struct Server {
     struct wlr_xcursor_manager *cursor_mgr = nullptr;
     struct wlr_seat *seat = nullptr;
     CursorEvents cursor_events{};
+    CursorMode cursor_mode = CursorMode::Passthrough;
+    View *grabbed_view = nullptr;
+    uint32_t grab_button = 0;
+    double grab_lx = 0;
+    double grab_ly = 0;
+    int grab_vx = 0;
+    int grab_vy = 0;
+    int grab_vw = 0;
+    int grab_vh = 0;
+    bool cursor_is_default = true;
 
     struct wl_listener new_output{};
     struct wl_listener new_input{};
@@ -577,13 +598,72 @@ void setup_keyboard(Server *server, struct wlr_input_device *device) {
     wlr_seat_set_keyboard(server->seat, kbd);
 }
 
+void set_default_cursor(Server *server) {
+    wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "left_ptr");
+    server->cursor_is_default = true;
+}
+
+// Shared tail of both motion handlers: drive an active drag, otherwise
+// forward to the seat and restore the default cursor off-client.
+void cursor_process_position(Server *server, uint32_t time_msec) {
+    if (server->cursor_mode != CursorMode::Passthrough &&
+        server->grabbed_view != nullptr) {
+        View *view = server->grabbed_view;
+        const int dx =
+            static_cast<int>(server->cursor->x - server->grab_lx);
+        const int dy =
+            static_cast<int>(server->cursor->y - server->grab_ly);
+        if (server->cursor_mode == CursorMode::Move) {
+            view->x = server->grab_vx + dx;
+            view->y = server->grab_vy + dy;
+            wlr_scene_node_set_position(&view->scene_tree->node, view->x,
+                view->y);
+        } else {
+            int w = server->grab_vw + dx;
+            int h = server->grab_vh + dy;
+            if (w < 100) {
+                w = 100;
+            }
+            if (h < 100) {
+                h = 100;
+            }
+            wlr_xdg_toplevel_set_size(view->toplevel, w, h);
+        }
+        return;
+    }
+    wlr_seat_pointer_notify_motion(server->seat, time_msec, server->cursor->x,
+        server->cursor->y);
+    if (server->seat->pointer_state.focused_surface == nullptr &&
+        !server->cursor_is_default) {
+        set_default_cursor(server);
+    }
+}
+
+void begin_grab(Server *server, View *view, CursorMode mode, uint32_t button) {
+    if (!view->floating) {
+        // Dragging floats the window first so the tiling layout reflows
+        // around the gap it leaves behind.
+        view->floating = true;
+        arrange(server);
+    }
+    wlr_scene_node_raise_to_top(&view->scene_tree->node);
+    server->grabbed_view = view;
+    server->grab_button = button;
+    server->cursor_mode = mode;
+    server->grab_lx = server->cursor->x;
+    server->grab_ly = server->cursor->y;
+    server->grab_vx = view->x;
+    server->grab_vy = view->y;
+    server->grab_vw = view->applied_w > 0 ? view->applied_w : 640;
+    server->grab_vh = view->applied_h > 0 ? view->applied_h : 480;
+}
+
 void on_cursor_motion(struct wl_listener *listener, void *data) {
     CursorEvents *ce = wl_container_of(listener, ce, motion);
     Server *server = ce->server;
     auto *event = static_cast<struct wlr_pointer_motion_event *>(data);
     wlr_cursor_move(server->cursor, &event->pointer->base, event->delta_x, event->delta_y);
-    wlr_seat_pointer_notify_motion(server->seat, event->time_msec, server->cursor->x,
-        server->cursor->y);
+    cursor_process_position(server, event->time_msec);
 }
 
 void on_cursor_motion_absolute(struct wl_listener *listener, void *data) {
@@ -591,8 +671,7 @@ void on_cursor_motion_absolute(struct wl_listener *listener, void *data) {
     Server *server = ce->server;
     auto *event = static_cast<struct wlr_pointer_motion_absolute_event *>(data);
     wlr_cursor_warp_absolute(server->cursor, &event->pointer->base, event->x, event->y);
-    wlr_seat_pointer_notify_motion(server->seat, event->time_msec, server->cursor->x,
-        server->cursor->y);
+    cursor_process_position(server, event->time_msec);
 }
 
 void on_cursor_button(struct wl_listener *listener, void *data) {
@@ -604,6 +683,20 @@ void on_cursor_button(struct wl_listener *listener, void *data) {
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
         View *view = view_at(server, server->cursor->x, server->cursor->y);
         focus_view(server, view);
+        struct wlr_keyboard *kbd = wlr_seat_get_keyboard(server->seat);
+        const uint32_t mods =
+            kbd != nullptr ? wlr_keyboard_get_modifiers(kbd) : 0;
+        if (view != nullptr && (mods & WLR_MODIFIER_ALT) != 0) {
+            if (event->button == BTN_LEFT) {
+                begin_grab(server, view, CursorMode::Move, event->button);
+            } else if (event->button == BTN_RIGHT) {
+                begin_grab(server, view, CursorMode::Resize, event->button);
+            }
+        }
+    } else if (event->button == server->grab_button) {
+        server->cursor_mode = CursorMode::Passthrough;
+        server->grabbed_view = nullptr;
+        server->grab_button = 0;
     }
 }
 
@@ -627,6 +720,7 @@ void on_request_cursor(struct wl_listener *listener, void *data) {
     if (event->seat_client == server->seat->pointer_state.focused_client) {
         wlr_cursor_set_surface(server->cursor, event->surface, event->hotspot_x,
             event->hotspot_y);
+        server->cursor_is_default = false;
     }
 }
 
@@ -882,6 +976,7 @@ void on_new_output(struct wl_listener *listener, void *data) {
     server->outputs.push_back(output);
 
     wlr_scene_output_create(server->scene, wlr_output);
+    set_default_cursor(server);
     arrange(server);
 }
 
@@ -954,6 +1049,11 @@ int main(int argc, char **argv) {
     server.cursor = wlr_cursor_create();
     wlr_cursor_attach_output_layout(server.cursor, server.output_layout);
     server.cursor_mgr = wlr_xcursor_manager_create(nullptr, 24);
+    // A visible pointer from the start: client cursors take over on focus
+    // via request_set_cursor, and cursor_process_position restores this
+    // whenever the pointer rests on no client surface. Needs an xcursor
+    // theme installed (e.g. Adwaita) or nothing shows.
+    set_default_cursor(&server);
 
     server.cursor_events.server = &server;
     server.cursor_events.motion.notify = on_cursor_motion;

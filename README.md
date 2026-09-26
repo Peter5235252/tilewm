@@ -110,6 +110,28 @@ gives you the logind session compositors need for input and DRM access;
 on hybrid-GPU laptops stick to the Intel iGPU. Nested testing under an
 existing Wayland/X11 session works exactly like under WSLg.
 
+### Launch from a TTY on NixOS
+
+1. Switch to a free console with `Ctrl+Alt+F3` and log in as yourself
+   (not root). If a graphical login manager owns F1/F2, leave it alone —
+   another TTY is fine.
+2. From your checkout, run `./run-tty.sh`. It unsets `WAYLAND_DISPLAY`
+   (so backend autocreate takes the display instead of nesting into
+   another session) and starts `./result/bin/tilewm`, falling back to
+   `./build/tilewm` for non-Nix builds.
+3. Checklist, in the order things usually bite:
+   - `foot` installed (`nix profile install nixpkgs#foot`) — without it,
+     `Alt+Return` silently does nothing and the desktop looks dead.
+   - Active logind session — a normal TTY login provides it; check with
+     `loginctl` if input or DRM permission is denied.
+   - Intel iGPU primary — if you can see the login prompt, modesetting
+     already works.
+   - `~/.config/tilewm/init.lua` present — the installer deploys the
+     example; without it you get built-in defaults.
+4. Quit with `Alt+Shift+E`. If the screen ever locks up, `Ctrl+Alt+F1/F2`
+   jumps back to your other session; tilewm releases the display on
+   VT switch.
+
 ## Build
 
 ```
@@ -158,6 +180,8 @@ WAYLAND_DISPLAY=wayland-1 foot
 | `Alt+Q`             | close focused window          |
 | `Alt+Shift+E`       | quit the compositor           |
 | click               | focus window                  |
+| `Alt+Left-drag`     | move window (floats it first) |
+| `Alt+Right-drag`    | resize window (floats it first) |
 
 ## Configuration (Phase 3a)
 
