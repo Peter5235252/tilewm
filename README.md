@@ -198,14 +198,12 @@ cp examples/foot.ini ~/.config/foot/foot.ini
 
 ## Distro support, now and later
 
-tilewm supports **Arch Linux and Fedora only, for now.** Every dependency
-comes from their official repositories (no AUR, no COPR), which is what
-keeps the installer honest and maintainable.
-
-As the project matures, **NixOS support is actively being worked on**
-(see the `nixos-support` branch), most likely through Flakes — but it is
-early days and it will take a while to do properly. Pinned, reproducible
-wlroots/Lua toolchains per flake input is a project of its own.
+tilewm supports **Arch Linux and Fedora**, where every dependency comes
+from the official repositories (no AUR, no COPR), and **NixOS, which is
+supported but very alpha-stage**: it installs and builds through the
+flake today, gets tested on real hardware firsthand, and still has rough
+edges (see the NixOS notes above). Expect the NixOS path to keep moving
+fast and occasionally break while it matures.
 
 **Debian and Ubuntu are not guaranteed at all.** Their slower-moving
 release cycles ship wlroots and Wayland libraries far older than a current
