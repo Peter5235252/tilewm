@@ -233,7 +233,7 @@ cp examples/foot.ini ~/.config/foot/foot.ini
 
 ## Distro support, now and later
 
-aquawm supports **Arch Linux and Fedora**, where every dependency comes
+AquaWM supports **Arch Linux and Fedora**, where every dependency comes
 from the official repositories (no AUR, no COPR), and **NixOS, which is
 supported but very alpha-stage**: it installs and builds through the
 flake today, gets tested on real hardware firsthand, and still has rough
