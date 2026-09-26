@@ -51,7 +51,7 @@ The script detects Arch vs Fedora vs NixOS, installs system packages on
 Arch/Fedora (sudo is used only for that step — never run the script
 itself as root; NixOS needs no system packages since the flake provides
 the toolchain), clones or updates the source, builds, runs the test
-suite, and installs the example `init.lua`, `foot.ini` and wallpaper
+suite, and installs the example `aquawm.lua`, `foot.ini` and wallpaper
 into `~/.config` (existing files are backed up, never silently
 overwritten). It uses `gum` menus when available and plain prompts
 otherwise. Useful flags: `--yes` (non-interactive), `--no-config`
@@ -126,11 +126,36 @@ existing Wayland/X11 session works exactly like under WSLg.
      `loginctl` if input or DRM permission is denied.
    - Intel iGPU primary — if you can see the login prompt, modesetting
      already works.
-   - `~/.config/aquawm/init.lua` present — the installer deploys the
+   - `~/.config/aquawm/aquawm.lua` present — the installer deploys the
      example; without it you get built-in defaults.
 4. Quit with `Alt+Shift+E`. If the screen ever locks up, `Ctrl+Alt+F1/F2`
    jumps back to your other session; aquawm releases the display on
    VT switch.
+
+## Login managers
+
+AquaWM shows up as a Desktop Environment wherever sessions are picked —
+GDM, SDDM, LightDM (with a Wayland-capable greeter) and greetd+tuigreet
+all read the same `/usr/share/wayland-sessions/*.desktop` files
+(XDM/LXDM don't do Wayland and are out of scope). Two pieces make it work:
+
+- `sessions/aquawm.desktop` declares the session (`Exec=aquawm-session`).
+  The wrapper exports `XDG_CURRENT_DESKTOP=aquawm`, which is what portals
+  and apps key off.
+- `sessions/aquawm-session` is a tiny wrapper that sets
+  `XDG_CURRENT_DESKTOP=aquawm` and execs the binary from `PATH`, so one
+  file covers `/usr/local`, distro, and nix-profile installs.
+
+On Arch/Fedora the installer deploys both (binary via `cmake --install`
+to `/usr/local`, session file to `/usr/share/wayland-sessions`). On
+NixOS the flake package carries the session file — register it with:
+
+```
+services.displayManager.sessionPackages = [ aquawm ];
+```
+
+and for greetd point tuigreet at the sessions directory, e.g.
+`--sessions ${config.services.displayManager.sessionData.desktops}/share/wayland-sessions`.
 
 ## Build
 
@@ -189,15 +214,15 @@ Settings and keybindings live in Lua, not in C++:
 
 ```
 mkdir -p ~/.config/aquawm
-cp examples/init.lua ~/.config/aquawm/init.lua
-$EDITOR ~/.config/aquawm/init.lua
+cp examples/aquawm.lua ~/.config/aquawm/aquawm.lua
+$EDITOR ~/.config/aquawm/aquawm.lua
 ```
 
 The file sets `config = { gaps, mfact, nmaster, workspaces }` and
 registers keys with `bind("Alt+Shift", "e", "quit")` (modifiers Alt, Ctrl,
 Shift, Super; key names are xkb keysyms; workspace actions take a 1-based
 number). Apply changes with `Alt+Shift+R`, with `kill -HUP <aquawm-pid>`,
-or by restarting. A custom path works too: `aquawm /path/to/init.lua`.
+or by restarting. A custom path works too: `aquawm /path/to/aquawm.lua`.
 Missing or broken files fall back to built-in defaults with a log line.
 
 ## Wallpaper
@@ -206,7 +231,7 @@ Missing or broken files fall back to built-in defaults with a log line.
 background, cover-fit per output behind all windows; empty means
 `~/.config/aquawm/wallpaper.jpg`. Changing it and reloading (`Alt+Shift+R`
 or `SIGHUP`) swaps it live. The shipped `assets/wallpaper.jpg` is the
-default - copy it next to your `init.lua`.
+default - copy it next to your `aquawm.lua`.
 
 ## Terminal font (foot)
 
@@ -224,7 +249,7 @@ cp examples/foot.ini ~/.config/foot/foot.ini
 - Phase 1 (done): bring-up, scene rendering, floating xdg-shell views, focus.
 - Phase 2 (done): master-stack tiling, focus cycling, floating toggle,
   workspaces, clean shutdown handling.
-- Phase 3a (done): embedded Lua config (`init.lua`, hot-reload),
+- Phase 3a (done): embedded Lua config (`aquawm.lua`, hot-reload),
   wallpaper backgrounds, foot font fix.
 - Phase 3b (next): layer-shell bar support with exclusive zone.
 - Phase 3c: XWayland support for legacy X11 apps.

@@ -8,7 +8,7 @@
 #   2. Detects Arch vs Fedora via /etc/os-release and installs every
 #      dependency from official repositories (no AUR, no COPR).
 #   3. Clones (or fast-forward updates) aquawm, configures, builds, tests.
-#   4. Installs example init.lua, foot.ini and wallpaper into ~/.config,
+#   4. Installs example aquawm.lua, foot.ini and wallpaper into ~/.config,
 #      backing up anything already there.
 #   5. Prints a tailored "what now" card (bare metal vs WSLg).
 #
@@ -441,13 +441,37 @@ install_file() {
 }
 
 deploy_configs() {
-    install_file "examples/init.lua" "$HOME/.config/aquawm/init.lua"
+    install_file "examples/aquawm.lua" "$HOME/.config/aquawm/aquawm.lua"
     install_file "examples/foot.ini" "$HOME/.config/foot/foot.ini"
     install_file "assets/wallpaper.jpg" "$HOME/.config/aquawm/wallpaper.jpg"
 }
 
 # ---------------------------------------------------------------------------
-# 9. Run it.
+# 9. Login-manager session: installed binary plus .desktop file so AquaWM
+#    appears in GDM, SDDM, LightDM and greetd. NixOS gets its session
+#    from the flake package instead, so there is nothing to do there.
+# ---------------------------------------------------------------------------
+install_session() {
+    if [ "$DISTRO" = "nixos" ]; then
+        log "NixOS session comes from the flake package: add it to services.displayManager.sessionPackages (see README)."
+        return 0
+    fi
+    if [ "$TESTMODE" -eq 1 ]; then
+        log "test mode: skipping system session install."
+        return 0
+    fi
+    if [ "$ASSUME_YES" -eq 1 ] || confirm "Install aquawm for login managers (needs sudo)?"; then
+        # One mechanism, no duplicates: prefix /usr puts the binary in
+        # /usr/bin and the session file in /usr/share/wayland-sessions,
+        # both places login managers already scan.
+        run_step "installing binary and session file" sudo cmake --install "$DEST/build" --prefix /usr
+    else
+        log "skipping login-manager session."
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# 10. Run it.
 # ---------------------------------------------------------------------------
 DEST=""
 case "$MODE" in
@@ -459,12 +483,13 @@ case "$MODE" in
         DEST="$(fetch_source)"
         verify_checkout
         build_all
+        install_session
         [ "$DO_CONFIG" -eq 1 ] && deploy_configs
         ;;
 esac
 
 # ---------------------------------------------------------------------------
-# 10. What-now card.
+# 11. What-now card.
 # ---------------------------------------------------------------------------
 if [ "$MODE" = "all" ] || [ "$MODE" = "build" ]; then
     if [ "$DISTRO" = "nixos" ]; then
@@ -473,7 +498,7 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "build" ]; then
 aquawm is ready: $DEST/result/bin/aquawm
   Develop: nix develop            (shell with every build dependency)
   Rebuild: nix build              (tests run as part of the build)
-  Config:  ~/.config/aquawm/init.lua   (Alt+Shift+R reloads it live)
+  Config:  ~/.config/aquawm/aquawm.lua   (Alt+Shift+R reloads it live)
 
 Keybindings: Alt+Return terminal | Alt+J/K focus | Alt+Space float |
   Alt+1..4 workspaces | Alt+Shift+1..4 move | Alt+Q close | Alt+Shift+E quit
@@ -490,7 +515,7 @@ aquawm is ready: $BIN
   Run it:  ./run-wslg.sh          (inside WSLg: X11 backend, maximize freely)
            ./build/aquawm         (bare metal TTY or nested Wayland session)
   Test:    WAYLAND_DISPLAY=wayland-N foot
-  Config:  ~/.config/aquawm/init.lua   (Alt+Shift+R reloads it live)
+  Config:  ~/.config/aquawm/aquawm.lua   (Alt+Shift+R reloads it live)
 
 Keybindings: Alt+Return terminal | Alt+J/K focus | Alt+Space float |
   Alt+1..4 workspaces | Alt+Shift+1..4 move | Alt+Q close | Alt+Shift+E quit

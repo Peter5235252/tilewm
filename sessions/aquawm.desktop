@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=AquaWM
+Comment=A minimal tiling Wayland compositor in C++ (wlroots, Lua-configured)
+Exec=aquawm-session
+TryExec=aquawm-session
+Type=Application

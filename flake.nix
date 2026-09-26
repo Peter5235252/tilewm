@@ -50,6 +50,7 @@
           ./tests
           ./examples
           ./assets
+          ./sessions
         ];
       };
     in
@@ -76,6 +77,10 @@
             # The test suite decodes the shipped asset; keep it enabled so
             # `nix build` fails rather than shipping an untested binary.
             doCheck = true;
+
+            # Advertises share/wayland-sessions/aquawm.desktop to
+            # services.displayManager.sessionPackages on NixOS.
+            passthru.providedSessions = [ "aquawm" ];
 
             meta = with nixpkgs.lib; {
               description = "Minimal tiling Wayland compositor in C++ (wlroots 0.20, Lua config)";

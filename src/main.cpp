@@ -1,6 +1,6 @@
 // aquawm - Phase 3a: Lua-configured master-stack tiling compositor.
 // Settings (gaps, mfact, nmaster, workspaces) and all keybindings come from
-// ~/.config/aquawm/init.lua (see examples/init.lua), reloadable via
+// ~/.config/aquawm/aquawm.lua (see examples/aquawm.lua), reloadable via
 // Alt+Shift+R or SIGHUP; built-in defaults apply when missing or broken.
 // Pointer: click focuses, Alt+Left-drag moves (floating tiled windows
 // first), Alt+Right-drag resizes, with a default xcursor otherwise.

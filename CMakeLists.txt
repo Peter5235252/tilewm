@@ -120,3 +120,5 @@ add_test(NAME wallpaper COMMAND test_wallpaper)
 
 include(GNUInstallDirs)
 install(TARGETS aquawm RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(PROGRAMS sessions/aquawm-session DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES sessions/aquawm.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/wayland-sessions)
