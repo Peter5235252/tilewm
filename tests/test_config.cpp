@@ -64,6 +64,17 @@ int main() {
               (sandbox / ".config" / "aquawm" / "aquawm.lua").string());
         // Explicit paths always win untouched.
         CHECK(aquawm::resolve_config_path("/tmp/x.lua") == "/tmp/x.lua");
+        // Wallpaper: the built-in default means "no choice", so a legacy
+        // image is preferred over a missing default; explicit paths win.
+        CHECK(aquawm::resolve_wallpaper_path(aquawm::default_wallpaper_path()) ==
+              (sandbox / ".config" / "aquawm" / "wallpaper.jpg").string());
+        {
+            std::ofstream img(sandbox / ".config" / "tilewm" / "wallpaper.jpg");
+            img << "fakejpeg";
+        }
+        CHECK(aquawm::resolve_wallpaper_path(aquawm::default_wallpaper_path()) ==
+              (sandbox / ".config" / "tilewm" / "wallpaper.jpg").string());
+        CHECK(aquawm::resolve_wallpaper_path("/tmp/custom.jpg") == "/tmp/custom.jpg");
         if (old_home != nullptr) {
             setenv("HOME", old_home, 1);
         }

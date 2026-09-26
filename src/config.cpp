@@ -217,15 +217,20 @@ std::string resolve_config_path(const std::string &explicit_path) {
 
 std::string resolve_wallpaper_path(const std::string &configured) {
     namespace fs = std::filesystem;
-    if (!configured.empty()) {
+    std::error_code ec;
+    // An explicit non-default choice is honored even when missing, so typos
+    // fail loudly downstream instead of silently showing another image.
+    // The built-in default just means "no choice made", so it participates
+    // in the legacy fallback below.
+    if (!configured.empty() && configured != default_wallpaper_path()) {
         return configured;
     }
     std::string preferred = default_wallpaper_path();
-    if (fs::exists(preferred)) {
+    if (fs::exists(preferred, ec)) {
         return preferred;
     }
     std::string legacy = legacy_wallpaper_path();
-    if (fs::exists(legacy)) {
+    if (fs::exists(legacy, ec)) {
         return legacy;
     }
     return preferred;

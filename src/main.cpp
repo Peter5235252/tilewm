@@ -102,6 +102,7 @@ struct Keyboard {
     Server *server = nullptr;
     struct wlr_keyboard *kbd = nullptr;
     struct wlr_input_device *device = nullptr;
+    bool warned_no_state = false;
     struct wl_listener key{};
     struct wl_listener modifiers{};
     struct wl_listener destroy{};
@@ -542,7 +543,13 @@ void on_keyboard_key(struct wl_listener *listener, void *data) {
 
     const uint32_t keycode = event->keycode + 8;
     const xkb_keysym_t *syms = nullptr;
-    int nsyms = xkb_state_key_get_syms(kb->kbd->xkb_state, keycode, &syms);
+    int nsyms = 0;
+    if (kb->kbd->xkb_state != nullptr) {
+        nsyms = xkb_state_key_get_syms(kb->kbd->xkb_state, keycode, &syms);
+    } else if (!kb->warned_no_state) {
+        kb->warned_no_state = true;
+        wlr_log(WLR_ERROR, "keyboard has no xkb state; forwarding raw keycodes only");
+    }
 
     bool handled = false;
     if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
@@ -574,14 +581,32 @@ void on_keyboard_destroy(struct wl_listener *listener, void * /*data*/) {
 
 void setup_keyboard(Server *server, struct wlr_input_device *device) {
     struct wlr_keyboard *kbd = wlr_keyboard_from_input_device(device);
+    wlr_log(WLR_INFO, "new keyboard: %s", device->name != nullptr ? device->name : "(unnamed)");
 
+    // A keyboard without a working keymap still forwards raw keycodes;
+    // only the compositor-side keysym matching degrades. Every failure
+    // here is loud because silent dead keys are worse than no keyboard.
     struct xkb_rule_names rules{};
     struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-    struct xkb_keymap *keymap =
-        xkb_keymap_new_from_names(context, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS);
-    wlr_keyboard_set_keymap(kbd, keymap);
-    xkb_keymap_unref(keymap);
-    xkb_context_unref(context);
+    struct xkb_keymap *keymap = nullptr;
+    if (context == nullptr) {
+        wlr_log(WLR_ERROR, "keyboard: cannot create xkb context; keys will not translate");
+    } else {
+        keymap = xkb_keymap_new_from_names(context, &rules,
+            XKB_KEYMAP_COMPILE_NO_FLAGS);
+        if (keymap == nullptr) {
+            wlr_log(WLR_ERROR,
+                "keyboard: cannot compile keymap (missing xkeyboard-config data? check XKB_CONFIG_ROOT); keys will not translate");
+        } else {
+            wlr_keyboard_set_keymap(kbd, keymap);
+            if (kbd->xkb_state == nullptr) {
+                wlr_log(WLR_ERROR,
+                    "keyboard: keymap set but xkb state is missing; keys will not translate");
+            }
+            xkb_keymap_unref(keymap);
+        }
+        xkb_context_unref(context);
+    }
     wlr_keyboard_set_repeat_info(kbd, 25, 600);
 
     Keyboard *kb = new Keyboard();
