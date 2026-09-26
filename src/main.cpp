@@ -44,6 +44,7 @@ extern "C" {
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/util/box.h>
 #include <wlr/util/log.h>
 }
 #undef static
@@ -652,9 +653,40 @@ void on_backend_destroy(struct wl_listener *listener, void * /*data*/) {
     wl_display_terminate(server->display);
 }
 
+// GPU-side wallpaper upload for buffers that refuse CPU mapping (typical
+// for GBM/dmabuf on real hardware): push pixels into a texture, then blit
+// it into the destination buffer with a throwaway render pass.
+bool blit_wallpaper_gpu(Server *server, const uint8_t *rgba, int iw, int ih,
+    struct wlr_buffer *buf) {
+    struct wlr_texture *tex = wlr_texture_from_pixels(server->renderer,
+        DRM_FORMAT_ABGR8888, static_cast<uint32_t>(iw * 4),
+        static_cast<uint32_t>(iw), static_cast<uint32_t>(ih), rgba);
+    if (tex == nullptr) {
+        return false;
+    }
+    struct wlr_render_pass *pass =
+        wlr_renderer_begin_buffer_pass(server->renderer, buf, nullptr);
+    if (pass == nullptr) {
+        wlr_texture_destroy(tex);
+        return false;
+    }
+    struct wlr_render_texture_options opts{};
+    opts.texture = tex;
+    opts.dst_box = {0, 0, iw, ih};
+    wlr_render_pass_add_texture(pass, &opts);
+    bool ok = wlr_render_pass_submit(pass);
+    wlr_texture_destroy(tex);
+    return ok;
+}
+
 // Decode the configured wallpaper and upload it once into a shared XRGB
 // allocator buffer. Remembers the last attempted path so a missing file
 // costs one open() instead of one per frame.
+//
+// Two upload paths, in order: a CPU memcpy when the buffer is mappable
+// (shm/pixman/dumb allocators), else a GPU blit through the renderer
+// (GBM/dmabuf buffers on real hardware generally refuse CPU mapping).
+// Anything else degrades to no background instead of crashing.
 bool upload_wallpaper(Server *server) {
     if (server->wallpaper.buffer != nullptr) {
         return true;
@@ -685,27 +717,32 @@ bool upload_wallpaper(Server *server) {
     void *data = nullptr;
     uint32_t format = 0;
     size_t stride = 0;
-    if (!wlr_buffer_begin_data_ptr_access(buf, WLR_BUFFER_DATA_PTR_ACCESS_WRITE,
-            &data, &format, &stride) ||
-        format != DRM_FORMAT_XRGB8888) {
+    bool mapped = wlr_buffer_begin_data_ptr_access(buf,
+        WLR_BUFFER_DATA_PTR_ACCESS_WRITE, &data, &format, &stride);
+    if (mapped && format != DRM_FORMAT_XRGB8888) {
         wlr_buffer_end_data_ptr_access(buf);
+        mapped = false;
+    }
+    if (mapped) {
+        auto *px = static_cast<uint8_t *>(data);
+        for (int y = 0; y < ih; ++y) {
+            uint8_t *row = px + static_cast<std::size_t>(y) * stride;
+            const uint8_t *src =
+                rgba.data() + static_cast<std::size_t>(y) * iw * 4;
+            for (int x = 0; x < iw; ++x) {
+                row[4 * x + 0] = src[4 * x + 2];
+                row[4 * x + 1] = src[4 * x + 1];
+                row[4 * x + 2] = src[4 * x + 0];
+                row[4 * x + 3] = 0xFF;
+            }
+        }
+        wlr_buffer_end_data_ptr_access(buf);
+    } else if (!blit_wallpaper_gpu(server, rgba.data(), iw, ih, buf)) {
         wlr_buffer_drop(buf);
-        wlr_log(WLR_ERROR, "wallpaper: cannot map buffer as XRGB8888");
+        wlr_log(WLR_ERROR,
+            "wallpaper: buffer is neither CPU-mappable nor GPU-blittable; skipping background");
         return false;
     }
-    auto *px = static_cast<uint8_t *>(data);
-    for (int y = 0; y < ih; ++y) {
-        uint8_t *row = px + static_cast<std::size_t>(y) * stride;
-        const uint8_t *src =
-            rgba.data() + static_cast<std::size_t>(y) * iw * 4;
-        for (int x = 0; x < iw; ++x) {
-            row[4 * x + 0] = src[4 * x + 2];
-            row[4 * x + 1] = src[4 * x + 1];
-            row[4 * x + 2] = src[4 * x + 0];
-            row[4 * x + 3] = 0xFF;
-        }
-    }
-    wlr_buffer_end_data_ptr_access(buf);
     server->wallpaper.buffer = buf;
     server->wallpaper.img_w = iw;
     server->wallpaper.img_h = ih;
